@@ -79,13 +79,13 @@ Si el core termina de forma inesperada, main lo reinicia y crea un canal nuevo. 
 
 ### Bucle
 
-Cada mensaje del usuario inicia un turno. El core llama al modelo con `streamText` (Vercel AI SDK) pasando historial y herramientas, ejecuta las herramientas pedidas, devuelve los resultados y repite hasta que el modelo responde sin pedir herramientas.
+Cada mensaje del usuario inicia un turno. El core llama al modelo pasando historial y herramientas, ejecuta las herramientas pedidas, devuelve los resultados y repite hasta que el modelo responde sin pedir herramientas. El bucle es propio: cada paso es una única llamada al modelo a través de una interfaz interna (`ModelClient`), implementada con `fetch` sobre la API nativa para Ollama y con el Vercel AI SDK para los endpoints con formato OpenAI.
 
 - **Límite de pasos:** 50 llamadas al modelo por turno. Al alcanzarlo el turno termina con un aviso.
 - **Detener:** cancela la petición al modelo (`AbortSignal`) y mata el comando en curso con su árbol de procesos.
 - **Errores de herramienta:** se devuelven al modelo como resultado de error; el turno continúa.
 - **Llamadas mal formadas:** el error de validación se devuelve al modelo. Tres seguidas detienen el turno y sugieren cambiar de modelo.
-- **Recorte de salidas:** un resultado de herramienta se recorta a 400 líneas o 20 000 caracteres (lo que ocurra antes), indicando cuánto se omitió.
+- **Recorte de salidas:** un resultado de herramienta se recorta a 400 líneas o 20 000 caracteres (lo que ocurra antes), conservando el principio y el final e indicando cuánto se omitió. `read_file` queda exento: tiene su propio límite de 2 000 líneas y 100 000 caracteres.
 - **Compactación:** cuando el uso supera el 80 % de la ventana del modelo, el core pide al modelo un resumen de los turnos antiguos, lo guarda como mensaje de resumen y conserva íntegros los dos últimos turnos. Los mensajes originales siguen en la base de datos y visibles en el chat.
 - **Sesiones en paralelo:** cada sesión tiene su propio bucle. Si dos sesiones editan el mismo archivo, la coincidencia exacta de `edit_file` hace fallar la edición obsoleta.
 
@@ -231,7 +231,7 @@ Tecnología: React, Vite, Tailwind, shadcn/ui, Zustand, Monaco (editor y diff), 
 - `electron-builder`: `.dmg` para macOS arm64 y `.exe` (NSIS) para Windows x64. ripgrep empaquetado por plataforma.
 - GitHub Actions compila, prueba y publica ambos instaladores como release al crear una etiqueta de versión.
 - **Sin firma de código.** En macOS el usuario autoriza la primera apertura en Ajustes → Privacidad y seguridad; en Windows usa "Más información → Ejecutar de todas formas" en SmartScreen. Un documento breve de instalación lo explica.
-- **Sin auto-actualización.** Al arrancar, la app consulta la última release y, si hay una versión nueva, muestra un enlace de descarga. Esto requiere que las releases sean de lectura pública: se asume un repositorio público. Si el código debe ser privado, las releases se publican en un repositorio público aparte que solo contiene instaladores.
+- **Sin auto-actualización.** Al arrancar, la app consulta la última release y, si hay una versión nueva, muestra un enlace de descarga. El repositorio de GitHub es público, de modo que las releases se leen y descargan sin cuenta.
 - Sin telemetría.
 
 ## 10. Decisiones registradas
