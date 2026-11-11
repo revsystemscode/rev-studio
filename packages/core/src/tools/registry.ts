@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { ToolSpec } from '../providers/types'
 import { editFile } from './edit-file'
 import { findFiles } from './find-files'
 import { listDir } from './list-dir'
@@ -14,13 +15,6 @@ const byName = new Map(allTools.map((t) => [t.name, t]))
 
 export function getTool(name: string): ToolDef | undefined {
   return byName.get(name)
-}
-
-export interface ToolSpec {
-  name: string
-  description: string
-  /** JSON Schema de los argumentos. */
-  parameters: Record<string, unknown>
 }
 
 export function toolSpecs(): ToolSpec[] {

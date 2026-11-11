@@ -79,7 +79,7 @@ Si el core termina de forma inesperada, main lo reinicia y crea un canal nuevo. 
 
 ### Bucle
 
-Cada mensaje del usuario inicia un turno. El core llama al modelo pasando historial y herramientas, ejecuta las herramientas pedidas, devuelve los resultados y repite hasta que el modelo responde sin pedir herramientas. El bucle es propio: cada paso es una única llamada al modelo a través de una interfaz interna (`ModelClient`), implementada con `fetch` sobre la API nativa para Ollama y con el Vercel AI SDK para los endpoints con formato OpenAI.
+Cada mensaje del usuario inicia un turno. El core llama al modelo pasando historial y herramientas, ejecuta las herramientas pedidas, devuelve los resultados y repite hasta que el modelo responde sin pedir herramientas. El bucle es propio: cada paso es una única llamada al modelo a través de una interfaz interna (`ModelClient`), implementada con `fetch` en ambos casos: sobre la API nativa para Ollama y sobre `/chat/completions` (SSE) para los endpoints con formato OpenAI. No se usa el Vercel AI SDK.
 
 - **Límite de pasos:** 50 llamadas al modelo por turno. Al alcanzarlo el turno termina con un aviso.
 - **Detener:** cancela la petición al modelo (`AbortSignal`) y mata el comando en curso con su árbol de procesos.
@@ -144,7 +144,7 @@ El agente solo depende de esta interfaz.
 
 | Proveedor | Conexión | Capacidades |
 |---|---|---|
-| **Ollama** | API nativa, `http://localhost:11434` por defecto. Detección automática al arrancar. | Leídas de la información del modelo. La app fija el tamaño de contexto en cada petición (32 768 por defecto, limitado al máximo del modelo, ajustable en Ajustes), porque el valor por defecto de Ollama es demasiado pequeño para un agente. |
+| **Ollama** | API nativa, `http://localhost:11434` por defecto. Detección automática al arrancar. | Leídas de la información del modelo. La ventana que se informa es la efectiva (la que la app pide), no el máximo del modelo. La app fija el tamaño de contexto en cada petición (32 768 por defecto, limitado al máximo del modelo, ajustable en Ajustes), porque el valor por defecto de Ollama es demasiado pequeño para un agente. |
 | **LM Studio** | Formato OpenAI, `http://localhost:1234/v1` por defecto. Detección automática. | Las que informe su API; el resto, `unknown`. |
 | **OpenAI-compatible** | URL base y clave introducidas por el usuario. | Ventana de contexto introducida a mano; tools `unknown` hasta comprobarlo. |
 
@@ -238,7 +238,8 @@ Tecnología: React, Vite, Tailwind, shadcn/ui, Zustand, Monaco (editor y diff), 
 
 | Decisión | Motivo |
 |---|---|
-| Electron + TypeScript | Un solo lenguaje; ecosistema Node para AI SDK, MCP y herramientas |
+| Electron + TypeScript | Un solo lenguaje; ecosistema Node para MCP y herramientas |
+| Clientes de modelo propios, sin AI SDK | Solo hace falta una llamada en streaming tras una interfaz interna; menos dependencias y pruebas con respuestas simuladas |
 | Núcleo como paquete sin Electron en `utilityProcess` | Aísla la UI de bloqueos, permite pruebas sin Electron y crecer sin tocar la interfaz |
 | Proveedores externos primero, motor integrado después | Llegar antes a un agente usable; la interfaz de proveedor evita reescrituras |
 | `node:sqlite` sin ORM | Sin módulos nativos que compilar por plataforma; seis tablas no justifican un ORM |
