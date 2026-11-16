@@ -1,3 +1,8 @@
 packages:
   - packages/*
   - apps/*
+
+# Paquetes con permiso para ejecutar scripts de instalación (descargan binarios).
+allowBuilds:
+  electron: true
+  esbuild: true
