@@ -49,3 +49,21 @@ test('con una base de datos corrupta la app avisa y termina sin abrir la ventana
   expect(code).toBe(1)
   expect(app.windows()).toHaveLength(0)
 })
+
+test('añadir proyecto y crear sesión aparecen en la barra lateral', async () => {
+  launched = await launchApp()
+  const { page } = launched
+  await page.getByRole('button', { name: '+ Proyecto' }).click()
+  const sidebar = page.getByRole('navigation', { name: 'Proyectos' })
+  await expect(sidebar.getByText('mi-web')).toBeVisible()
+  await page.getByRole('button', { name: 'Nueva sesión en mi-web' }).click()
+  await expect(sidebar.getByRole('button', { name: 'Nueva sesión', exact: true })).toBeVisible()
+})
+
+test('Ajustes muestra el proveedor fake como Conectado', async () => {
+  launched = await launchApp()
+  const { page } = launched
+  await page.getByRole('button', { name: 'Ajustes' }).click()
+  const row = page.getByTestId('provider-row').filter({ hasText: 'Pruebas' })
+  await expect(row).toContainText('Conectado')
+})
