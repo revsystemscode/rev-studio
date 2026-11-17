@@ -32,7 +32,10 @@ class CallError extends Error {
   }
 }
 
-async function boot(script: StepEvent[][] = [], opts: { dbPath?: string; decrypt?: (c: string) => Promise<string> } = {}) {
+async function boot(
+  script: StepEvent[][] = [],
+  opts: { dbPath?: string; decrypt?: (c: string) => Promise<string>; fakeAsDefault?: boolean } = {},
+) {
   const work = tempDir('rev-host-')
   const root = join(work, 'proyecto')
   mkdirSync(join(root, 'src'), { recursive: true })
@@ -48,7 +51,7 @@ async function boot(script: StepEvent[][] = [], opts: { dbPath?: string; decrypt
     dbPath: opts.dbPath ?? ':memory:',
     rgPath,
     decrypt: opts.decrypt ?? (async (c) => c),
-    fake: { scriptPath },
+    fake: { scriptPath, asDefault: opts.fakeAsDefault },
     transport: {
       post(msg: any) {
         if ('event' in msg) events.push(msg.event)
@@ -119,6 +122,17 @@ describe('arranque', () => {
       ['fake', 'fake://'],
     ])
     expect(list.find((p) => p.config.type === 'fake')!.reachable).toBe(true)
+  })
+
+  it('con fake.asDefault el proveedor de pruebas es el modelo por defecto, sin pisar uno ya elegido', async () => {
+    const work = tempDir('rev-host-default-')
+    const dbPath = join(work, 'rev.db')
+    const first = await boot([], { dbPath, fakeAsDefault: true })
+    const fake = (await first.call('providers.list', {})).find((p) => p.config.type === 'fake')!
+    expect(await first.call('settings.get', {})).toEqual({ defaultProviderId: fake.config.id, defaultModel: 'fake-model' })
+    await first.call('settings.set', { defaultProviderId: 'otro', defaultModel: 'grande' })
+    const second = await boot([], { dbPath, fakeAsDefault: true })
+    expect(await second.call('settings.get', {})).toEqual({ defaultProviderId: 'otro', defaultModel: 'grande' })
   })
 
   it('una sesión que quedó en running pasa a interrupted', async () => {

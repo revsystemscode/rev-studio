@@ -8,7 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/state/app-store'
 
-type Confirm = { title: string; description: string; action: string; run(): Promise<void> }
+type Confirm = { title: string; description: string; action: string; run(): Promise<unknown> }
 
 export function Sidebar() {
   const projects = useApp((s) => s.projects)

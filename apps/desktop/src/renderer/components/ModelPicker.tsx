@@ -25,6 +25,9 @@ export function ModelPicker(props: {
   value: ModelChoice | null
   onChange(choice: ModelChoice): void
   id?: string
+  disabled?: boolean
+  /** Variante para la cabecera del chat: más baja y estrecha. */
+  compact?: boolean
 }) {
   const { client, providers, value, onChange } = props
   const [groups, setGroups] = useState<Group[] | null>(null)
@@ -76,8 +79,8 @@ export function ModelPicker(props: {
 
   return (
     <div className="flex flex-col gap-1.5">
-      <Select value={selected >= 0 ? String(selected) : ''} onValueChange={(v) => void choose(v)} disabled={checking || options.length === 0}>
-        <SelectTrigger id={props.id} className="w-full max-w-sm" aria-label="Modelo">
+      <Select value={selected >= 0 ? String(selected) : ''} onValueChange={(v) => void choose(v)} disabled={props.disabled || checking || options.length === 0}>
+        <SelectTrigger id={props.id} size={props.compact ? 'sm' : 'default'} className={props.compact ? 'max-w-64 min-w-40' : 'w-full max-w-sm'} aria-label="Modelo">
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>

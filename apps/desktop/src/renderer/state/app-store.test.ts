@@ -1,4 +1,4 @@
-import type { MethodName, Project, ProviderStatus, Session } from '@rev/protocol'
+import type { MethodName, Project, ProviderStatus, Session, SessionSnapshot } from '@rev/protocol'
 import { describe, expect, it } from 'vitest'
 import type { CoreClient } from '../client'
 import { createAppStore } from './app-store'
@@ -154,4 +154,124 @@ describe('app-store', () => {
     await store.getState().removeProject('a')
     expect(store.getState()).toMatchObject({ projects: [], sessionsByProject: {}, activeProjectId: null, activeSessionId: null })
   })
+
+  const snapshot = (s: Session, over: Partial<SessionSnapshot> = {}): SessionSnapshot => ({
+    session: s,
+    messages: [],
+    pendingApprovals: [],
+    usedTokens: 0,
+    windowTokens: null,
+    ...over,
+  })
+
+  it('selectSession carga la vista de la sesión con sessions.get', async () => {
+    const s1 = session('s1', 'a')
+    const { store, client, called } = setup({
+      'projects.list': () => [project('a')],
+      'sessions.list': () => [s1],
+      'sessions.get': () => snapshot(s1, { usedTokens: 900, windowTokens: 32768 }),
+    })
+    await store.getState().init(client)
+    await store.getState().selectSession('a', 's1')
+    expect(called('sessions.get')).toEqual([{ id: 's1' }])
+    expect(store.getState().sessionViews.s1).toMatchObject({ sessionId: 's1', usedTokens: 900, windowTokens: 32768 })
+  })
+
+  it('applyEvent aplica el evento a la vista cargada y no crea vistas de sesiones sin cargar', async () => {
+    const s1 = session('s1', 'a')
+    const { store, client } = setup({
+      'projects.list': () => [project('a')],
+      'sessions.list': () => [s1],
+      'sessions.get': () => snapshot(s1),
+    })
+    await store.getState().init(client)
+    await store.getState().selectSession('a', 's1')
+    store.getState().applyEvent({ type: 'text.delta', sessionId: 's1', delta: 'hola' })
+    store.getState().applyEvent({ type: 'text.delta', sessionId: 's9', delta: 'nada' })
+    expect(store.getState().sessionViews.s1?.streamingText).toBe('hola')
+    expect(store.getState().sessionViews.s9).toBeUndefined()
+  })
+
+  it('al reconectar con el core se recargan las vistas cargadas', async () => {
+    const s1 = session('s1', 'a')
+    let used = 100
+    const { store, client, called } = setup({
+      'projects.list': () => [project('a')],
+      'sessions.list': () => [s1],
+      'sessions.get': () => snapshot(s1, { usedTokens: used }),
+    })
+    await store.getState().init(client)
+    await store.getState().selectSession('a', 's1')
+    used = 250
+    await store.getState().init(client)
+    expect(called('sessions.get')).toHaveLength(2)
+    expect(store.getState().sessionViews.s1?.usedTokens).toBe(250)
+  })
+
+  it('turn.status running vuelve a pedir la lista de sesiones del proyecto para recoger el título nuevo', async () => {
+    let title = 'Nueva sesión'
+    const { store, client } = setup({
+      'projects.list': () => [project('a')],
+      // Como el core: el título y el estado se guardan antes de emitir turn.status.
+      'sessions.list': () => [session('s1', 'a', { title, turnStatus: title === 'Nueva sesión' ? 'idle' : 'running' })],
+    })
+    await store.getState().init(client)
+    title = 'arregla el flag'
+    store.getState().applyEvent({ type: 'turn.status', sessionId: 's1', status: 'running', error: null })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(store.getState().sessionsByProject.a?.[0]).toMatchObject({ title: 'arregla el flag', turnStatus: 'running' })
+  })
+
+  it('setSessionModel cambia el modelo de la sesión', async () => {
+    const { store, client, called } = setup({
+      'projects.list': () => [project('a')],
+      'sessions.list': () => [session('s1', 'a')],
+      'sessions.setModel': (p) => session('s1', 'a', { providerId: p.providerId, model: p.model }),
+    })
+    await store.getState().init(client)
+    await store.getState().setSessionModel('s1', { providerId: 'otro', model: 'grande' })
+    expect(called('sessions.setModel')).toEqual([{ id: 's1', providerId: 'otro', model: 'grande' }])
+    expect(store.getState().sessionsByProject.a?.[0]).toMatchObject({ providerId: 'otro', model: 'grande' })
+  })
+
+  it('las acciones del turno llaman al core y un error queda como aviso', async () => {
+    const { store, client, called } = setup({
+      'turn.send': () => ({}),
+      'turn.stop': () => ({}),
+      'approval.resolve': () => ({}),
+      'turn.retry': () => {
+        throw new Error('Ya hay un turno en curso en esta sesión.')
+      },
+    })
+    await store.getState().init(client)
+    await store.getState().sendMessage('s1', 'hola')
+    await store.getState().stopTurn('s1')
+    await store.getState().resolveApproval('ap1', 'deny')
+    await store.getState().retryTurn('s1')
+    expect(called('turn.send')).toEqual([{ sessionId: 's1', text: 'hola' }])
+    expect(called('turn.stop')).toEqual([{ sessionId: 's1' }])
+    expect(called('approval.resolve')).toEqual([{ approvalId: 'ap1', decision: 'deny' }])
+    expect(store.getState().notice).toMatch(/turno en curso/)
+  })
+
+  it('un proyecto añadido mientras init sigue cargando no se pierde', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    let lists = 0
+    const { store, client } = setup(
+      {
+        // La primera lista se pidió antes de añadir el proyecto y llega tarde; el core ya lo tiene.
+        'projects.list': async () => (++lists === 1 ? (await gate, []) : [project('a')]),
+        'projects.add': () => project('a'),
+      },
+      async () => '/tmp/a',
+    )
+    const loading = store.getState().init(client)
+    await store.getState().addProject()
+    release()
+    await loading
+    expect(store.getState().projects).toEqual([project('a')])
+    expect(store.getState().activeProjectId).toBe('a')
+  })
 })
+

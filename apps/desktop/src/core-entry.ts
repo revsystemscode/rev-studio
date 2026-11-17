@@ -29,7 +29,7 @@ const env = process.env
 startCore({
   dbPath: env.REV_DB_PATH!,
   rgPath: env.REV_RG_PATH!,
-  fake: env.REV_STUDIO_FAKE_SCRIPT ? { scriptPath: env.REV_STUDIO_FAKE_SCRIPT } : undefined,
+  fake: env.REV_STUDIO_FAKE_SCRIPT ? { scriptPath: env.REV_STUDIO_FAKE_SCRIPT, asDefault: true } : undefined,
   decrypt: (cipher) =>
     new Promise((resolve, reject) => {
       const id = ++nextDecrypt

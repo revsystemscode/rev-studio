@@ -9,6 +9,7 @@ import { permissionsRepo } from '../db/repos/permissions'
 import { projectsRepo, type ProjectRow } from '../db/repos/projects'
 import { providersRepo, type ProviderRow } from '../db/repos/providers'
 import { sessionsRepo } from '../db/repos/sessions'
+import { FAKE_MODEL } from '../providers/fake'
 import { probeTools } from '../providers/probe'
 import { DEFAULT_URLS } from '../providers/registry'
 import { CoreError, notFound } from './errors'
@@ -28,8 +29,11 @@ export interface CoreOptions {
   transport: Transport
   /** Descifra una clave de API guardada; lo implementa el proceso principal con el llavero del sistema. */
   decrypt(cipher: string): Promise<string>
-  /** Habilita el proveedor guionizado para pruebas de extremo a extremo. */
-  fake?: { scriptPath: string }
+  /**
+   * Habilita el proveedor guionizado para pruebas de extremo a extremo. Con `asDefault`, pasa a ser
+   * el modelo por defecto si no hay otro elegido, para que las pruebas no usen un Ollama real del equipo.
+   */
+  fake?: { scriptPath: string; asDefault?: boolean }
 }
 
 const isDirectory = (p: string) => existsSync(p) && statSync(p).isDirectory()
@@ -60,6 +64,11 @@ export async function startCore(opts: CoreOptions): Promise<{ dispose(): Promise
   }
   if (opts.fake && !providers.list().some((p) => p.type === 'fake')) {
     providers.save({ id: randomUUID(), type: 'fake', name: 'Pruebas', baseUrl: 'fake://', keyCipher: null, contextSize: null })
+  }
+  if (opts.fake?.asDefault && providers.getSetting('defaultModel') === null) {
+    const fake = providers.list().find((p) => p.type === 'fake')!
+    providers.setSetting('defaultProviderId', fake.id)
+    providers.setSetting('defaultModel', FAKE_MODEL)
   }
 
   let disposed = false

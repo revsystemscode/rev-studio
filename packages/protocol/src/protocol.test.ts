@@ -29,3 +29,11 @@ describe('protocol', () => {
     expect(ResponseSchema.safeParse({ id: 1, error: { code: 'weird', message: 'x' } }).success).toBe(false)
   })
 })
+
+describe('isChained', () => {
+  it('detecta encadenado, redirección y sustitución; un comando simple no lo es', async () => {
+    const { isChained } = await import('./index')
+    for (const c of ['a && b', 'a | b', 'a; b', 'a > f', 'echo `x`', 'echo $(x)', 'echo ${x}', 'a\nb']) expect(isChained(c)).toBe(true)
+    for (const c of ['npm test', 'git status --short', 'node -e "1+1"']) expect(isChained(c)).toBe(false)
+  })
+})

@@ -1,10 +1,6 @@
-// Caracteres con los que una shell (zsh o PowerShell) puede ejecutar algo más que el comando visible:
-// encadenar, redirigir, sustituir o expandir.
-const CHAIN_PATTERN = /[&|;<>`\n\r]|\$\(|\$\{/
+import { isChained } from '@rev/protocol'
 
-export function isChained(command: string): boolean {
-  return CHAIN_PATTERN.test(command)
-}
+export { isChained }
 
 export function words(command: string): string[] {
   return command.trim().split(/\s+/).filter(Boolean)

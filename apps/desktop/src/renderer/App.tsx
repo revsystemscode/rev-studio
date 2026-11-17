@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Chat } from '@/components/Chat'
 import { FirstRun } from '@/components/FirstRun'
 import { Settings } from '@/components/Settings'
 import { Sidebar } from '@/components/Sidebar'
@@ -53,7 +54,7 @@ export function App() {
         ) : (
           <>
             <ResizablePanel id="chat" minSize={320}>
-              <ChatPlaceholder />
+              <Center />
             </ResizablePanel>
             <ResizableHandle />
             <ResizablePanel id="files" defaultSize="34%" minSize={240}>
@@ -67,8 +68,8 @@ export function App() {
   )
 }
 
-/** Hueco del chat; se sustituye en la Tarea 12. */
-function ChatPlaceholder() {
+/** Centro: el chat de la sesión activa o una indicación de qué hacer. */
+function Center() {
   const session = useApp((s) =>
     s.activeProjectId && s.activeSessionId ? s.sessionsByProject[s.activeProjectId]?.find((x) => x.id === s.activeSessionId) : undefined,
   )
@@ -76,14 +77,7 @@ function ChatPlaceholder() {
   if (!session) {
     return <Placeholder>{hasProjects ? 'Elige una sesión o crea una nueva en la barra lateral.' : 'Añade un proyecto para empezar.'}</Placeholder>
   }
-  return (
-    <Placeholder>
-      <div>
-        <p className="text-foreground font-medium">{session.title}</p>
-        <p className="mt-1 font-mono text-xs">{session.model}</p>
-      </div>
-    </Placeholder>
-  )
+  return <Chat key={session.id} session={session} />
 }
 
 function Placeholder({ children }: { children: React.ReactNode }) {

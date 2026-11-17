@@ -1,7 +1,8 @@
-import type { CoreEvent, Project, ProviderStatus, Session, Settings } from '@rev/protocol'
+import type { ApprovalDecision, CoreEvent, Project, ProviderStatus, Session, Settings } from '@rev/protocol'
 import { useStore } from 'zustand'
 import { createStore } from 'zustand/vanilla'
 import type { CoreClient } from '../client'
+import { emptyView, fromSnapshot, reduceSession, type SessionView } from './session-state'
 
 export interface AppState {
   client: CoreClient | null
@@ -18,18 +19,27 @@ export interface AppState {
   pendingApprovals: Record<string, string[]>
   /** Aviso para el usuario cuando una acción falla. */
   notice: string | null
+  /** Vistas del chat de las sesiones abiertas en esta ventana. */
+  sessionViews: Record<string, SessionView>
 
   /** Carga proyectos, sesiones, proveedores y ajustes. Se llama de nuevo cuando el core se reinicia. */
   init(client: CoreClient): Promise<void>
-  refreshProviders(): Promise<void>
-  addProject(): Promise<void>
-  removeProject(id: string): Promise<void>
-  relocateProject(id: string): Promise<void>
+  refreshProviders(): Promise<boolean>
+  addProject(): Promise<boolean>
+  removeProject(id: string): Promise<boolean>
+  relocateProject(id: string): Promise<boolean>
   /** Usa el modelo por defecto de los ajustes o, si no hay, el primero disponible. */
-  createSession(projectId: string): Promise<void>
-  deleteSession(id: string): Promise<void>
-  selectSession(projectId: string, sessionId: string): void
-  setDefaultModel(choice: { providerId: string; model: string } | null): Promise<void>
+  createSession(projectId: string): Promise<boolean>
+  deleteSession(id: string): Promise<boolean>
+  /** Selecciona la sesión y carga su vista desde el core. */
+  selectSession(projectId: string, sessionId: string): Promise<void>
+  setSessionModel(sessionId: string, choice: { providerId: string; model: string }): Promise<boolean>
+  /** Falso si el core no aceptó el mensaje (el motivo queda en `notice`). */
+  sendMessage(sessionId: string, text: string): Promise<boolean>
+  stopTurn(sessionId: string): Promise<boolean>
+  retryTurn(sessionId: string): Promise<boolean>
+  resolveApproval(approvalId: string, decision: ApprovalDecision): Promise<boolean>
+  setDefaultModel(choice: { providerId: string; model: string } | null): Promise<boolean>
   setView(view: AppState['view']): void
   dismissNotice(): void
   applyEvent(e: CoreEvent): void
@@ -52,14 +62,51 @@ export function createAppStore(deps: AppStoreDeps) {
       return client
     }
     /** Ejecuta una acción; si falla, deja el motivo en `notice` en vez de propagar el error a la interfaz. */
-    const attempt = async (action: () => Promise<void>) => {
+    const attempt = async (action: () => Promise<void>): Promise<boolean> => {
       try {
         await action()
+        return true
       } catch (e) {
         set({ notice: message(e) })
+        return false
       }
     }
-    const upsertProject = (project: Project) =>
+    /**
+     * Cuenta los cambios hechos por acciones del usuario. `init` vuelve a cargar si cambia mientras
+     * espera al core: su respuesta se pidió antes y pisaría lo que el usuario acaba de hacer.
+     */
+    let changes = 0
+    const replaceSession = (session: Session) =>
+      set((s) => ({
+        sessionsByProject: {
+          ...s.sessionsByProject,
+          [session.projectId]: (s.sessionsByProject[session.projectId] ?? []).map((x) => (x.id === session.id ? session : x)),
+        },
+      }))
+    /** Carga la vista de una sesión y sus aprobaciones pendientes. */
+    const loadView = async (client: CoreClient, sessionId: string) => {
+      const snapshot = await client.call('sessions.get', { id: sessionId })
+      if (get().client !== client) return
+      replaceSession(snapshot.session)
+      set((s) => {
+        const { [sessionId]: old, ...rest } = s.pendingApprovals
+        const ids = snapshot.pendingApprovals.map((a) => a.id)
+        return {
+          sessionViews: { ...s.sessionViews, [sessionId]: fromSnapshot(snapshot) },
+          pendingApprovals: ids.length ? { ...rest, [sessionId]: ids } : rest,
+        }
+      })
+    }
+    /** El core cambia el título al recibir el primer mensaje sin avisar: se vuelve a pedir la lista. */
+    const refreshSessions = async (projectId: string) => {
+      const client = get().client
+      if (!client) return
+      const list = await client.call('sessions.list', { projectId }).catch(() => null)
+      if (list && get().client === client) set((s) => ({ sessionsByProject: { ...s.sessionsByProject, [projectId]: list } }))
+    }
+
+    const upsertProject = (project: Project) => {
+      changes++
       set((s) => ({
         projects: s.projects.some((p) => p.id === project.id)
           ? s.projects.map((p) => (p.id === project.id ? project : p))
@@ -67,6 +114,7 @@ export function createAppStore(deps: AppStoreDeps) {
         sessionsByProject: { [project.id]: [], ...s.sessionsByProject },
         activeProjectId: project.id,
       }))
+    }
 
     return {
       client: null,
@@ -80,33 +128,48 @@ export function createAppStore(deps: AppStoreDeps) {
       view: 'main',
       pendingApprovals: {},
       notice: null,
+      sessionViews: {},
 
       async init(client) {
         set({ client })
         await attempt(async () => {
-          const [projects, providers, settings] = await Promise.all([
-            client.call('projects.list', {}),
-            client.call('providers.list', {}),
-            client.call('settings.get', {}),
-          ])
-          const lists = await Promise.all(projects.map((p) => client.call('sessions.list', { projectId: p.id })))
+          const load = async () => {
+            const [projects, providers, settings] = await Promise.all([
+              client.call('projects.list', {}),
+              client.call('providers.list', {}),
+              client.call('settings.get', {}),
+            ])
+            const lists = await Promise.all(projects.map((p) => client.call('sessions.list', { projectId: p.id })))
+            return { projects, providers, settings, lists }
+          }
+          let before = changes
+          let loaded = await load()
+          for (let tries = 0; changes !== before && tries < 5; tries++) {
+            before = changes
+            loaded = await load()
+          }
+          const { projects, providers, settings, lists } = loaded
           // Un core reiniciado mientras cargábamos ya trae su propio cliente: este resultado está caducado.
           if (get().client !== client) return
           const sessionsByProject = Object.fromEntries(projects.map((p, i) => [p.id, lists[i] ?? []]))
           const { activeProjectId, activeSessionId } = get()
           const projectAlive = projects.some((p) => p.id === activeProjectId)
           const sessionAlive = projectAlive && (sessionsByProject[activeProjectId!] ?? []).some((s) => s.id === activeSessionId)
+          const alive = new Set(Object.values(sessionsByProject).flat().map((x) => x.id))
+          const reload = Object.keys(get().sessionViews).filter((id) => alive.has(id))
           set({
             ready: true,
             projects,
             sessionsByProject,
             providers,
             settings,
-            // Las aprobaciones en curso no sobreviven a un reinicio del core.
             pendingApprovals: {},
+            sessionViews: Object.fromEntries(Object.entries(get().sessionViews).filter(([id]) => alive.has(id))),
             activeProjectId: projectAlive ? activeProjectId : null,
             activeSessionId: sessionAlive ? activeSessionId : null,
           })
+          // Tras un reinicio del core, lo que mostraban las vistas puede haber cambiado.
+          await Promise.all(reload.map((id) => loadView(client, id)))
         })
       },
 
@@ -125,6 +188,7 @@ export function createAppStore(deps: AppStoreDeps) {
       removeProject: (id) =>
         attempt(async () => {
           await core().call('projects.remove', { id })
+          changes++
           set((s) => {
             const { [id]: removed, ...sessionsByProject } = s.sessionsByProject
             const wasActive = s.activeProjectId === id
@@ -167,8 +231,10 @@ export function createAppStore(deps: AppStoreDeps) {
             return
           }
           const session = await client.call('sessions.create', { projectId, ...target })
+          changes++
           set((s) => ({
             sessionsByProject: { ...s.sessionsByProject, [projectId]: [session, ...(s.sessionsByProject[projectId] ?? [])] },
+            sessionViews: { ...s.sessionViews, [session.id]: emptyView(session.id) },
             activeProjectId: projectId,
             activeSessionId: session.id,
             view: 'main',
@@ -178,9 +244,12 @@ export function createAppStore(deps: AppStoreDeps) {
       deleteSession: (id) =>
         attempt(async () => {
           await core().call('sessions.delete', { id })
+          changes++
           set((s) => {
             const { [id]: gone, ...pendingApprovals } = s.pendingApprovals
+            const { [id]: goneView, ...sessionViews } = s.sessionViews
             return {
+              sessionViews,
               sessionsByProject: Object.fromEntries(
                 Object.entries(s.sessionsByProject).map(([pid, list]) => [pid, list.filter((x) => x.id !== id)]),
               ),
@@ -190,12 +259,39 @@ export function createAppStore(deps: AppStoreDeps) {
           })
         }),
 
-      selectSession: (projectId, sessionId) => set({ activeProjectId: projectId, activeSessionId: sessionId, view: 'main' }),
+      async selectSession(projectId, sessionId) {
+        set({ activeProjectId: projectId, activeSessionId: sessionId, view: 'main' })
+        if (get().sessionViews[sessionId]) return
+        await attempt(() => loadView(core(), sessionId))
+      },
+
+      setSessionModel: (sessionId, choice) =>
+        attempt(async () => {
+          replaceSession(await core().call('sessions.setModel', { id: sessionId, ...choice }))
+        }),
+
+      sendMessage: (sessionId, text) =>
+        attempt(async () => {
+          await core().call('turn.send', { sessionId, text })
+        }),
+      stopTurn: (sessionId) =>
+        attempt(async () => {
+          await core().call('turn.stop', { sessionId })
+        }),
+      retryTurn: (sessionId) =>
+        attempt(async () => {
+          await core().call('turn.retry', { sessionId })
+        }),
+      resolveApproval: (approvalId, decision) =>
+        attempt(async () => {
+          await core().call('approval.resolve', { approvalId, decision })
+        }),
 
       setDefaultModel: (choice) =>
         attempt(async () => {
           const settings: Settings = { defaultProviderId: choice?.providerId ?? null, defaultModel: choice?.model ?? null }
           await core().call('settings.set', settings)
+          changes++
           set({ settings })
         }),
 
@@ -203,7 +299,18 @@ export function createAppStore(deps: AppStoreDeps) {
       dismissNotice: () => set({ notice: null }),
 
       applyEvent(e) {
+        if ('sessionId' in e) {
+          const view = get().sessionViews[e.sessionId]
+          if (view) {
+            const next = reduceSession(view, e)
+            if (next !== view) set((s) => ({ sessionViews: { ...s.sessionViews, [e.sessionId]: next } }))
+          }
+        }
         if (e.type === 'turn.status') {
+          if (e.status === 'running') {
+            const owner = Object.entries(get().sessionsByProject).find(([, list]) => list.some((x) => x.id === e.sessionId))
+            if (owner) void refreshSessions(owner[0])
+          }
           set((s) => ({
             sessionsByProject: Object.fromEntries(
               Object.entries(s.sessionsByProject).map(([pid, list]) => [
