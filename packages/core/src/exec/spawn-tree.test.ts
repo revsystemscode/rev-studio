@@ -86,7 +86,8 @@ describe('runProcess', () => {
 
   it('una salida infinita no supera el límite y conserva principio y final', async () => {
     const p = makeProject({ 's.js': "console.log('PRIMERA'); for (;;) console.log('x'.repeat(1000))" })
-    const r = await sh('node s.js', p.root, { timeoutMs: 2000, maxBytes: 100_000 })
+    // 5 s: en un runner lento, arrancar zsh -l y node puede llevarse casi dos segundos.
+    const r = await sh('node s.js', p.root, { timeoutMs: 5000, maxBytes: 100_000 })
     expect(r.timedOut).toBe(true)
     expect(r.truncatedBytes).toBeGreaterThan(0)
     expect(r.output.length).toBeLessThan(101_000)
