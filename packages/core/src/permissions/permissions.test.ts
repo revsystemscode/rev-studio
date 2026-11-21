@@ -7,7 +7,6 @@ import { readFile } from '../tools/read-file'
 import { runCommand } from '../tools/run-command'
 import { search } from '../tools/search'
 import { writeFile } from '../tools/write-file'
-import { commandPrefix, isChained } from './command-prefix'
 import { PermissionService } from './service'
 
 afterEach(cleanupProjects)
@@ -19,28 +18,6 @@ function setup() {
 }
 const cmd = (command: string) => ({ command })
 const edit = { path: 'a.ts', oldText: 'a', newText: 'b' }
-
-describe('isChained', () => {
-  it.each(['a && b', 'a || b', 'a; b', 'a | b', 'a > f', 'a < f', 'a `b`', 'a $(b)', 'a\nb', 'a & b', 'a ${b}', 'a\rb'])(
-    'detecta %j',
-    (c) => expect(isChained(c)).toBe(true),
-  )
-  it.each(['npm test', 'git status --short', 'node -e "console.log(1)"', 'ls -la src/'])('no marca %j', (c) =>
-    expect(isChained(c)).toBe(false),
-  )
-})
-
-describe('commandPrefix', () => {
-  it('toma las dos primeras palabras, o una si no hay más', () => {
-    expect(commandPrefix('npm test -- --watch')).toBe('npm test')
-    expect(commandPrefix('  npm   test  ')).toBe('npm test')
-    expect(commandPrefix('ls')).toBe('ls')
-  })
-  it('es null para comandos encadenados o vacíos', () => {
-    expect(commandPrefix('a && b')).toBeNull()
-    expect(commandPrefix('   ')).toBeNull()
-  })
-})
 
 describe('PermissionService', () => {
   it('las herramientas de lectura siempre se permiten', () => {
@@ -79,6 +56,21 @@ describe('PermissionService', () => {
     expect(service.check(p.projectId, runCommand, cmd('npm test && rm -rf .'))).toBe('ask')
     expect(service.check(p.projectId, runCommand, cmd('npm test; rm -rf .'))).toBe('ask')
     expect(service.check(p.projectId, runCommand, cmd('npm test $(rm -rf .)'))).toBe('ask')
+  })
+
+  it('una regla guardada no cubre sustituciones de zsh ni expresiones de PowerShell', () => {
+    const { p, service } = setup()
+    service.remember(p.projectId, runCommand, cmd('npm test'))
+    for (const bypass of ['npm test =(touch pwned)', 'npm test *(e:"touch pwned":)', 'npm test (Remove-Item -Recurse x)', 'npm test @(x)'])
+      expect(service.check(p.projectId, runCommand, cmd(bypass)), bypass).toBe('ask')
+  })
+
+  it('remember no guarda reglas que permitirían mucho más de lo que se vio', () => {
+    const { p, repo, service } = setup()
+    service.remember(p.projectId, runCommand, cmd('rm -rf dist'))
+    service.remember(p.projectId, runCommand, cmd("node -e 'console.log(1)'"))
+    service.remember(p.projectId, runCommand, cmd('pnpm dlx cosa'))
+    expect(repo.list(p.projectId)).toEqual([])
   })
 
   it('remember de un comando encadenado no crea regla', () => {

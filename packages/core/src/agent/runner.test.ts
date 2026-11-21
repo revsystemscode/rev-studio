@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { permissionsRepo } from '../db/repos/permissions'
 import { ProviderUnreachableError, type ModelClient, type StepEvent } from '../providers/types'
 import { cleanupProjects } from '../testing/project'
 import { editFile } from '../tools/edit-file'
-import { runCommand } from '../tools/run-command'
 import { buildModelMessages } from './history'
 import { MAX_STEPS } from './runner'
 import { call, finish, harness, say } from './testing'
@@ -171,7 +171,7 @@ describe('SessionRunner', () => {
 
   it('stop durante run_command mata el proceso', async () => {
     const h = harness([call('run_command', { command: 'node s.js' }), say('nunca')], { 's.js': 'setTimeout(() => {}, 60000)' })
-    h.permissions.remember(h.p.projectId, runCommand, { command: 'node s.js' })
+    permissionsRepo(h.p.db).add(h.p.projectId, 'run_command', 'node s.js')
     const started = Date.now()
     const turn = h.runner.send('ejecuta')
     await h.waitFor('tool.started')
@@ -198,7 +198,8 @@ describe('SessionRunner', () => {
       's.js': "for (let i = 1; i <= 1000; i++) console.log('linea ' + i)",
       'big.txt': lines,
     })
-    h.permissions.remember(h.p.projectId, runCommand, { command: 'node s.js' })
+    // remember no guarda reglas para node (ejecuta cualquier código): la regla se crea a mano.
+    permissionsRepo(h.p.db).add(h.p.projectId, 'run_command', 'node s.js')
     await h.runner.send('x')
     const [, , commandResult, , readResult] = h.model.requests.at(-1)!.slice(1)
     expect(commandResult!.parts[0]).toMatchObject({ output: expect.stringContaining('líneas omitidas') })

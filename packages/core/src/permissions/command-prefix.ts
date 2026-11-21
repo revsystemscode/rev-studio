@@ -1,15 +1,2 @@
-import { isChained } from '@rev/protocol'
-
-export { isChained }
-
-export function words(command: string): string[] {
-  return command.trim().split(/\s+/).filter(Boolean)
-}
-
-/** Prefijo que se guarda con "permitir siempre": las dos primeras palabras. Null si no es seguro guardarlo. */
-export function commandPrefix(command: string): string | null {
-  if (isChained(command)) return null
-  const w = words(command)
-  if (w.length === 0) return null
-  return w.slice(0, 2).join(' ')
-}
+// La lógica vive en @rev/protocol para que la interfaz muestre la misma regla que guarda el core.
+export { commandPrefix, isPlainCommand, words } from '@rev/protocol'

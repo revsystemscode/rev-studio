@@ -30,10 +30,42 @@ describe('protocol', () => {
   })
 })
 
-describe('isChained', () => {
-  it('detecta encadenado, redirección y sustitución; un comando simple no lo es', async () => {
-    const { isChained } = await import('./index')
-    for (const c of ['a && b', 'a | b', 'a; b', 'a > f', 'echo `x`', 'echo $(x)', 'echo ${x}', 'a\nb']) expect(isChained(c)).toBe(true)
-    for (const c of ['npm test', 'git status --short', 'node -e "1+1"']) expect(isChained(c)).toBe(false)
+describe('isPlainCommand', () => {
+  it('solo los comandos simples pueden coincidir con una regla guardada', async () => {
+    const { isPlainCommand } = await import('./index')
+    const unsafe = [
+      'a && b', 'a | b', 'a; b', 'a > f', 'echo `x`', 'echo $(x)', 'echo ${x}', 'a\nb', 'a\rb', 'a & b',
+      // zsh: sustitución de proceso y calificadores de glob ejecutan código.
+      'npm test =(touch pwned)', 'npm test *(e:"touch pwned":)',
+      // PowerShell: paréntesis, subexpresiones y bloques se evalúan en modo argumento.
+      'npm test (Remove-Item x)', 'npm test @(1)', 'npm test { x }', 'npm test $env:X',
+      'ls *.ts', 'ls [ab]', 'ls a?',
+    ]
+    for (const c of unsafe) expect(isPlainCommand(c), c).toBe(false)
+    for (const c of ['npm test', 'git status --short', 'npm run build -- --mode=prod', "git commit -m 'Añade ñandú'", 'pnpm --filter @rev/core test', 'pytest tests/unit -k login'])
+      expect(isPlainCommand(c), c).toBe(true)
+  })
+})
+
+describe('commandPrefix', () => {
+  it('toma las dos primeras palabras, o una si no hay más', async () => {
+    const { commandPrefix } = await import('./index')
+    expect(commandPrefix('npm test -- --watch')).toBe('npm test')
+    expect(commandPrefix('  npm   test  ')).toBe('npm test')
+    expect(commandPrefix('ls')).toBe('ls')
+  })
+
+  it('no ofrece regla si el comando no es simple, si la segunda palabra es una opción o si ejecuta código arbitrario', async () => {
+    const { commandPrefix } = await import('./index')
+    const none = [
+      'a && b', '   ', 'npm test (x)',
+      // "rm -rf dist" guardaría "rm -rf", que también borraría cualquier otra cosa.
+      'rm -rf dist', 'git -c core.x=1 status', 'ls -la src',
+      // Intérpretes y lanzadores: la regla permitiría cualquier programa.
+      "node -e 'x'", 'node script.js', 'python3 -c x', 'bash run.sh', 'sh -c x', 'pwsh -File x.ps1', 'npx -y cosa', 'npx cosa',
+      'pnpm dlx cosa', 'pnpm exec cosa', 'npm exec cosa', 'yarn dlx cosa', 'bun x cosa', 'env FOO=1 npm test', 'sudo npm test', 'xargs rm',
+    ]
+    for (const c of none) expect(commandPrefix(c), c).toBeNull()
+    expect(commandPrefix('git push origin main')).toBe('git push')
   })
 })

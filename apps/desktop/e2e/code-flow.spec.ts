@@ -39,6 +39,7 @@ test('flujo completo de edición con aprobación', async () => {
   await expect(card).toBeVisible()
   await expect(card.locator('[data-diff="del"]')).toHaveText('export const ok = false')
   await expect(card.locator('[data-diff="add"]')).toHaveText('export const ok = true')
+  await expect(card).toContainText('permitirá al agente editar archivos de este proyecto sin preguntar')
   expect(authOnDisk()).toBe('export const ok = false\n')
 
   await card.getByRole('button', { name: 'Permitir', exact: true }).click()

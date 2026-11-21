@@ -1,6 +1,6 @@
 import type { permissionsRepo } from '../db/repos/permissions'
 import type { ToolDef } from '../tools/types'
-import { commandPrefix, isChained, words } from './command-prefix'
+import { commandPrefix, isPlainCommand, words } from './command-prefix'
 
 const ANY = '*'
 
@@ -19,7 +19,8 @@ export class PermissionService {
     if (tool.kind === 'edit') return rules.some((r) => r.pattern === ANY) ? 'allow' : 'ask'
 
     const command = commandOf(input)
-    if (isChained(command)) return 'ask'
+    // Una regla solo cubre comandos simples: nada de sustituciones, encadenados ni expresiones.
+    if (!isPlainCommand(command)) return 'ask'
     const w = words(command)
     const allowed = rules.some((r) => {
       const prefix = words(r.pattern)

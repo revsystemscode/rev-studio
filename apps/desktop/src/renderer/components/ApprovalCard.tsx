@@ -1,5 +1,5 @@
 import type { ApprovalDecision, ApprovalRequest } from '@rev/protocol'
-import { isChained } from '@rev/protocol'
+import { commandPrefix } from '@rev/protocol'
 import { structuredPatch } from 'diff'
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -29,7 +29,17 @@ export function diffRows(original: string | null, proposed: string): DiffRow[] {
 export function ApprovalCard({ approval, onDecide }: { approval: ApprovalRequest; onDecide(decision: ApprovalDecision): void }) {
   const [sent, setSent] = useState(false)
   const { preview } = approval
-  const canAlways = preview.kind !== 'command' || !isChained(preview.command)
+  // La regla exacta que guardaría "Siempre en este proyecto", para que nadie la acepte a ciegas.
+  const rule = preview.kind === 'command' ? commandPrefix(preview.command) : null
+  const canAlways = preview.kind !== 'command' || rule !== null
+  const alwaysHint =
+    preview.kind === 'command'
+      ? rule
+        ? <>«Siempre en este proyecto» permitirá sin preguntar cualquier comando que empiece por <code className="font-mono">{rule}</code>.</>
+        : 'Este comando no se puede guardar como regla (es compuesto, usa una opción como segunda palabra o ejecuta código arbitrario): se aprueba cada vez.'
+      : approval.toolName === 'write_file'
+        ? '«Siempre en este proyecto» permitirá al agente crear y sobrescribir archivos de este proyecto sin preguntar.'
+        : '«Siempre en este proyecto» permitirá al agente editar archivos de este proyecto sin preguntar.'
   const title =
     preview.kind === 'command' ? 'El agente quiere ejecutar un comando' : preview.original === null ? 'El agente quiere crear un archivo' : 'El agente quiere editar un archivo'
 
@@ -52,10 +62,10 @@ export function ApprovalCard({ approval, onDecide }: { approval: ApprovalRequest
           <p className="text-muted-foreground mt-1.5 text-xs">
             en <span className="font-mono break-all select-text">{preview.cwd}</span>
           </p>
-          {!canAlways && <p className="text-muted-foreground mt-1 text-xs">Los comandos encadenados se aprueban uno a uno.</p>}
         </div>
       )}
-      <footer className="flex flex-wrap gap-2 border-t px-3 py-2">
+      <p className="text-muted-foreground border-t px-3 pt-2 text-xs">{alwaysHint}</p>
+      <footer className="flex flex-wrap gap-2 px-3 py-2">
         <Button size="sm" disabled={sent} onClick={() => decide('once')}>
           Permitir
         </Button>
