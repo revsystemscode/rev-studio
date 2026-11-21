@@ -4,7 +4,7 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import { languageFor, monaco } from '@/monaco-setup'
-import { appStore, useApp } from '@/state/app-store'
+import { useApp } from '@/state/app-store'
 
 const OPTIONS = {
   fontSize: 12,
@@ -17,8 +17,9 @@ const OPTIONS = {
 } as const
 
 /** Editor de un archivo del proyecto o diff de un cambio de la sesión. */
-export function Editor() {
-  const openFile = useApp((s) => s.openFile)
+export function Editor({ projectId }: { projectId: string }) {
+  // Un archivo de otro proyecto no se muestra aquí; su borrador sigue en el store para cuando se vuelva.
+  const openFile = useApp((s) => (s.openFile?.projectId === projectId ? s.openFile : null))
   const openDiff = useApp((s) => s.openDiff)
   const error = useApp((s) => s.editorError)
 
@@ -63,7 +64,7 @@ function EditorShell({ path, status, actions, children }: { path: string; status
 function FileEditor() {
   const openFile = useApp((s) => s.openFile)!
   const reloads = useApp((s) => s.fileReloads)
-  const setDirty = useApp((s) => s.setOpenFileDirty)
+  const setDraft = useApp((s) => s.setDraft)
   const save = useApp((s) => s.saveOpenFile)
   const reload = useApp((s) => s.reloadOpenFile)
   const scheme = useColorScheme()
@@ -108,13 +109,13 @@ function FileEditor() {
       <div data-testid="file-editor" className="min-h-0 flex-1">
         <MonacoEditor
           key={`${openFile.projectId}:${openFile.path}:${reloads}`}
-          value={openFile.content}
+          // El borrador del store: al volver de Ajustes o de otro proyecto, el texto sigue ahí.
+          value={openFile.draft}
           language={languageFor(openFile.path)}
           theme={scheme === 'dark' ? 'vs-dark' : 'vs'}
           options={OPTIONS}
           onMount={onMount}
-          // Se compara con lo que hay en disco ahora, no con lo de la última renderización.
-          onChange={(value) => setDirty((value ?? '') !== (appStore.getState().openFile?.content ?? ''))}
+          onChange={(value) => setDraft(value ?? '')}
         />
       </div>
     </EditorShell>

@@ -54,7 +54,9 @@ export interface AppState {
   setDefaultModel(choice: { providerId: string; model: string } | null): Promise<boolean>
   loadDir(projectId: string, dir: string): Promise<void>
   openPath(projectId: string, path: string): Promise<void>
-  setOpenFileDirty(dirty: boolean): void
+  setDraft(text: string): void
+  /** Hay texto sin guardar: cerrar la ventana debe pedir confirmación. */
+  hasUnsavedChanges(): boolean
   saveOpenFile(content: string): Promise<boolean>
   reloadOpenFile(): Promise<void>
   closeEditor(): void
@@ -73,6 +75,8 @@ export interface OpenFile {
   projectId: string
   path: string
   content: string
+  /** Texto actual del editor. Vive aquí para no perderse si el editor se desmonta (Ajustes, otro proyecto…). */
+  draft: string
   dirty: boolean
   /** El archivo cambió en disco mientras tenía cambios sin guardar. */
   diskChanged: boolean
@@ -158,7 +162,7 @@ export function createAppStore(deps: AppStoreDeps) {
       if (!now || now.projectId !== projectId || now.path !== path || content === now.content) return
       if (now.dirty) set({ openFile: { ...now, diskChanged: true } })
       else if (content === null) set({ openFile: null, editorError: { path, message: 'El archivo ya no está en el disco.' } })
-      else set({ openFile: { ...now, content, diskChanged: false } })
+      else set({ openFile: { ...now, content, draft: content, diskChanged: false } })
     }
     const projectOfSession = (sessionId: string) =>
       Object.entries(get().sessionsByProject).find(([, list]) => list.some((x) => x.id === sessionId))?.[0] ?? null
@@ -331,7 +335,14 @@ export function createAppStore(deps: AppStoreDeps) {
         }),
 
       async selectSession(projectId, sessionId) {
-        set({ activeProjectId: projectId, activeSessionId: sessionId, view: 'main' })
+        // El diff y los errores son de la sesión anterior; el archivo abierto (y su borrador) se conserva.
+        const leaving = get().activeSessionId !== sessionId
+        set({
+          activeProjectId: projectId,
+          activeSessionId: sessionId,
+          view: 'main',
+          ...(leaving && { openDiff: null, editorError: null }),
+        })
         void get().refreshChanges(sessionId)
         if (get().sessionViews[sessionId]) return
         await attempt(() => loadView(core(), sessionId))
@@ -357,17 +368,19 @@ export function createAppStore(deps: AppStoreDeps) {
       async openPath(projectId, path) {
         try {
           const { content } = await core().call('fs.read', { projectId, path })
-          set({ openFile: { projectId, path, content, dirty: false, diskChanged: false }, openDiff: null, editorError: null })
+          set({ openFile: { projectId, path, content, draft: content, dirty: false, diskChanged: false }, openDiff: null, editorError: null })
         } catch (e) {
           // Demasiado grande, binario o desaparecido: se explica en el panel del editor, no como aviso global.
           set({ openFile: null, openDiff: null, editorError: { path, message: message(e) } })
         }
       },
 
-      setOpenFileDirty(dirty) {
+      setDraft(text) {
         const open = get().openFile
-        if (open && open.dirty !== dirty) set({ openFile: { ...open, dirty } })
+        if (open && open.draft !== text) set({ openFile: { ...open, draft: text, dirty: text !== open.content } })
       },
+
+      hasUnsavedChanges: () => Boolean(get().openFile?.dirty),
 
       saveOpenFile: (content) =>
         attempt(async () => {
@@ -375,7 +388,10 @@ export function createAppStore(deps: AppStoreDeps) {
           if (!open) return
           await core().call('fs.write', { projectId: open.projectId, path: open.path, content })
           const now = get().openFile
-          if (now?.projectId === open.projectId && now.path === open.path) set({ openFile: { ...now, content, dirty: false, diskChanged: false } })
+          if (now?.projectId === open.projectId && now.path === open.path) {
+            // Lo escrito después de pulsar guardar sigue siendo un borrador.
+            set({ openFile: { ...now, content, dirty: now.draft !== content, diskChanged: false } })
+          }
         }),
 
       async reloadOpenFile() {

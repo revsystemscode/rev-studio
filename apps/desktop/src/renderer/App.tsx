@@ -16,6 +16,15 @@ export function App() {
   const view = useApp((s) => s.view)
   const noProvider = useApp((s) => s.ready && !s.providers.some((p) => p.reachable))
 
+  // Con texto sin guardar, cerrar la ventana o salir pide confirmación (el diálogo lo muestra el proceso principal).
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (appStore.getState().hasUnsavedChanges()) e.preventDefault()
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [])
+
   useEffect(
     () =>
       connectCore((client) => {

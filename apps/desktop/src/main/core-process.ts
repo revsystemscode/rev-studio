@@ -4,6 +4,8 @@ import { decryptSecret } from './secrets'
 const RESTART_DELAY_MS = 500
 const CRASH_WINDOW_MS = 60_000
 const MAX_CRASHES = 3
+/** Tiempo para que el core mate los comandos en marcha al salir. */
+const SHUTDOWN_TIMEOUT_MS = 5000
 
 export interface CoreProcessOptions {
   entry: string
@@ -92,8 +94,25 @@ export class CoreProcess {
     webContents.postMessage('core-port', null, [port2])
   }
 
-  stop(): void {
+  /**
+   * Apaga el core de forma ordenada: le pide que detenga los turnos y mate los comandos en marcha,
+   * y lo mata si no termina a tiempo.
+   */
+  stop(timeoutMs = SHUTDOWN_TIMEOUT_MS): Promise<void> {
     this.stopping = true
-    this.child?.kill()
+    const child = this.child
+    if (!child) return Promise.resolve()
+    return new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(timer)
+        resolve()
+      }
+      const timer = setTimeout(() => {
+        child.kill()
+        resolve()
+      }, timeoutMs)
+      child.once('exit', done)
+      child.postMessage({ type: 'shutdown' })
+    })
   }
 }

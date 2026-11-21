@@ -331,7 +331,7 @@ describe('app-store', () => {
       await store.getState().init(client)
       await store.getState().showDiff('s1', 'x.ts')
       await store.getState().openPath('p', 'src/a.ts')
-      expect(store.getState().openFile).toEqual({ projectId: 'p', path: 'src/a.ts', content: 'hola', dirty: false, diskChanged: false })
+      expect(store.getState().openFile).toEqual({ projectId: 'p', path: 'src/a.ts', content: 'hola', draft: 'hola', dirty: false, diskChanged: false })
       expect(store.getState().openDiff).toBeNull()
     })
 
@@ -366,14 +366,14 @@ describe('app-store', () => {
       await tick()
       expect(store.getState().openFile).toMatchObject({ content: 'v2', dirty: false, diskChanged: false })
 
-      store.getState().setOpenFileDirty(true)
+      store.getState().setDraft('editado a mano')
       disk = 'v3'
       store.getState().applyEvent({ type: 'file.changed', sessionId: 's1', path: 'src/a.ts' })
       await tick()
-      expect(store.getState().openFile).toMatchObject({ content: 'v2', dirty: true, diskChanged: true })
+      expect(store.getState().openFile).toMatchObject({ content: 'v2', draft: 'editado a mano', dirty: true, diskChanged: true })
 
       await store.getState().reloadOpenFile()
-      expect(store.getState().openFile).toMatchObject({ content: 'v3', dirty: false, diskChanged: false })
+      expect(store.getState().openFile).toMatchObject({ content: 'v3', draft: 'v3', dirty: false, diskChanged: false })
     })
 
     it('tree.changed de la carpeta del archivo abierto lo recarga solo si cambió en disco', async () => {
@@ -398,7 +398,7 @@ describe('app-store', () => {
       const { store, client, called } = setup({ 'fs.read': () => ({ content: 'a' }), 'fs.write': () => ({}) })
       await store.getState().init(client)
       await store.getState().openPath('p', 'x.ts')
-      store.getState().setOpenFileDirty(true)
+      store.getState().setDraft('b')
       await store.getState().saveOpenFile('b')
       expect(called('fs.write')).toEqual([{ projectId: 'p', path: 'x.ts', content: 'b' }])
       expect(store.getState().openFile).toMatchObject({ content: 'b', dirty: false })
@@ -430,7 +430,7 @@ describe('app-store', () => {
       store.getState().guardUnsaved(() => runs.push('sin archivo'))
       await store.getState().openPath('p', 'x.ts')
       store.getState().guardUnsaved(() => runs.push('limpio'))
-      store.getState().setOpenFileDirty(true)
+      store.getState().setDraft('editado a mano')
       store.getState().guardUnsaved(() => runs.push('sucio'))
       expect(runs).toEqual(['sin archivo', 'limpio'])
       expect(store.getState().discardPrompt).toEqual({ path: 'x.ts' })
@@ -441,6 +441,51 @@ describe('app-store', () => {
       store.getState().answerDiscard(true)
       expect(runs).toEqual(['sin archivo', 'limpio', 'sucio'])
       expect(store.getState().discardPrompt).toBeNull()
+    })
+
+    it('setDraft guarda el texto del editor en el store: dirty mientras difiere de lo que hay en disco', async () => {
+      const { store, client } = setup({ 'fs.read': () => ({ content: 'a' }), 'fs.write': () => ({}) })
+      await store.getState().init(client)
+      await store.getState().openPath('p', 'x.ts')
+      store.getState().setDraft('ab')
+      expect(store.getState().openFile).toMatchObject({ content: 'a', draft: 'ab', dirty: true })
+      store.getState().setDraft('a')
+      expect(store.getState().openFile).toMatchObject({ draft: 'a', dirty: false })
+      store.getState().setDraft('abc')
+      await store.getState().saveOpenFile('abc')
+      expect(store.getState().openFile).toMatchObject({ content: 'abc', draft: 'abc', dirty: false })
+    })
+
+    it('hasUnsavedChanges indica si hay que confirmar antes de cerrar la ventana', async () => {
+      const { store, client } = setup({ 'fs.read': () => ({ content: 'a' }) })
+      await store.getState().init(client)
+      expect(store.getState().hasUnsavedChanges()).toBe(false)
+      await store.getState().openPath('p', 'x.ts')
+      store.getState().setDraft('b')
+      expect(store.getState().hasUnsavedChanges()).toBe(true)
+    })
+
+    it('cambiar de sesión cierra el diff y el error de la anterior, pero conserva el archivo y su borrador', async () => {
+      const s1 = session('s1', 'a')
+      const s2 = session('s2', 'b')
+      const { store, client } = setup({
+        'projects.list': () => [project('a'), project('b')],
+        'sessions.list': ({ projectId }) => (projectId === 'a' ? [s1] : [s2]),
+        'sessions.get': ({ id }) => snapshot(id === 's1' ? s1 : s2),
+        'fs.read': () => ({ content: 'a' }),
+        'changes.diff': () => ({ original: 'x', current: 'y' }),
+      })
+      await store.getState().init(client)
+      await store.getState().selectSession('a', 's1')
+      await store.getState().openPath('a', 'x.ts')
+      store.getState().setDraft('borrador')
+      await store.getState().selectSession('b', 's2')
+      expect(store.getState().openFile).toMatchObject({ projectId: 'a', draft: 'borrador', dirty: true })
+      await store.getState().selectSession('a', 's1')
+      await store.getState().showDiff('s1', 'x.ts')
+      await store.getState().selectSession('b', 's2')
+      expect(store.getState().openDiff).toBeNull()
+      expect(store.getState().editorError).toBeNull()
     })
   })
 })

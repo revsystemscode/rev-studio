@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import type { StepEvent } from '@rev/core'
@@ -139,4 +139,45 @@ test('abrir un archivo, editarlo y guardar con Ctrl/Cmd+S lo escribe en disco', 
   await page.keyboard.press('ControlOrMeta+s')
   await expect(panel.getByText('Sin guardar')).toBeHidden()
   expect(readFileSync(join(launched.projectDir, 'README.md'), 'utf8')).toBe('# mi-web\nHola desde Rev Studio')
+})
+
+test('el texto sin guardar sobrevive a abrir Ajustes y volver', async () => {
+  launched = await launchApp()
+  const { page } = launched
+  await page.getByRole('button', { name: '+ Proyecto' }).click()
+  await page.getByRole('button', { name: 'Nueva sesión en mi-web' }).click()
+  const panel = filesPanel(page)
+  await panel.getByRole('treeitem', { name: /README\.md/ }).click()
+  const editor = panel.getByTestId('file-editor')
+  await editor.locator('.view-lines').click()
+  await page.keyboard.press('ControlOrMeta+End')
+  await page.keyboard.type('borrador importante')
+  await page.getByRole('button', { name: 'Ajustes' }).click()
+  await page.getByRole('button', { name: 'Volver', exact: true }).click()
+  await expect(filesPanel(page).getByText('Sin guardar')).toBeVisible()
+  await expect(filesPanel(page).getByTestId('file-editor').locator('.view-lines')).toContainText('borrador importante')
+  expect(readFileSync(join(launched.projectDir, 'README.md'), 'utf8')).toBe('# mi-web\n')
+  // Se guarda para que cerrar la app al terminar no pida confirmación.
+  await filesPanel(page).getByRole('button', { name: 'Guardar' }).click()
+  await expect(filesPanel(page).getByText('Sin guardar')).toBeHidden()
+})
+
+test('cerrar la app mata los comandos que el agente tenía en marcha', async () => {
+  const long = "node -e \"require('fs').writeFileSync('pid.txt', String(process.pid)); setInterval(() => {}, 1000)\""
+  const page = await startTurn([toolCall('run_command', { command: long }, 'c1')], 'arranca el servidor')
+  await approvalCard(page).getByRole('button', { name: 'Permitir', exact: true }).click()
+  const pidFile = join(launched!.projectDir, 'pid.txt')
+  await expect.poll(() => existsSync(pidFile), { timeout: 15_000 }).toBe(true)
+  const pid = Number(readFileSync(pidFile, 'utf8'))
+  const alive = () => {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+  expect(alive()).toBe(true)
+  await launched!.app.close()
+  await expect.poll(alive, { timeout: 10_000 }).toBe(false)
 })

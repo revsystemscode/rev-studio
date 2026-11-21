@@ -43,7 +43,7 @@ export function FilesPanel({ projectId, sessionId }: { projectId: string; sessio
         </ResizablePanel>
         <ResizableHandle />
         <ResizablePanel id="editor" minSize={120}>
-          <Editor />
+          <Editor projectId={projectId} />
         </ResizablePanel>
       </ResizablePanelGroup>
       <Dialog open={discardPrompt !== null} onOpenChange={(open) => !open && answerDiscard(false)}>

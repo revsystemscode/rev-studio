@@ -59,6 +59,23 @@ function createWindow(): void {
   // La interfaz nunca navega ni abre ventanas: los enlaces externos pasan por openExternal.
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   win.webContents.on('will-navigate', (event) => event.preventDefault())
+  // El renderer bloquea la descarga si hay texto sin guardar: aquí se pregunta qué hacer.
+  win.webContents.on('will-prevent-unload', (event) => {
+    if (e2e) {
+      event.preventDefault()
+      return
+    }
+    const choice = dialog.showMessageBoxSync(win, {
+      type: 'warning',
+      buttons: ['Salir sin guardar', 'Cancelar'],
+      defaultId: 1,
+      cancelId: 1,
+      message: 'Hay cambios sin guardar',
+      detail: 'El archivo abierto en el editor tiene cambios que no se han guardado. Si sales, se pierden.',
+    })
+    // preventDefault aquí significa "ignorar el bloqueo y cerrar".
+    if (choice === 0) event.preventDefault()
+  })
 
   if (env.ELECTRON_RENDERER_URL) void win.loadURL(env.ELECTRON_RENDERER_URL)
   else void win.loadFile(join(here, '../renderer/index.html'))
@@ -86,7 +103,16 @@ ipcMain.handle('check-for-update', () => (e2e ? null : checkForUpdate(app.getVer
 
 app.on('before-quit', () => {
   quitting = true
-  core.stop()
+})
+// Se apaga el core cuando ya no queda ninguna ventana que pueda cancelar la salida (cambios sin guardar).
+let coreStopped = false
+app.on('will-quit', (event) => {
+  if (coreStopped) return
+  event.preventDefault()
+  void core.stop().finally(() => {
+    coreStopped = true
+    app.quit()
+  })
 })
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
