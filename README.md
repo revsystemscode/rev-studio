@@ -71,3 +71,7 @@ El core se ejecuta en un proceso aparte (`utilityProcess`) y habla con la interf
 3. Crea y sube la etiqueta: `git tag -a vX.Y.Z -m "Rev Studio X.Y.Z" && git push origin vX.Y.Z`.
 
 El workflow `release.yml` ejecuta las pruebas, construye los instaladores en macOS y Windows y los publica en la release de la etiqueta. Las apps instaladas avisan de la versión nueva al arrancar.
+
+## Licencia
+
+[MIT](LICENSE)
