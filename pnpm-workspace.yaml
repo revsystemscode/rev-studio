@@ -6,3 +6,14 @@ packages:
 allowBuilds:
   electron: true
   esbuild: true
+  # Instalador Squirrel de Windows: no se usa (el instalador es NSIS).
+  electron-winstaller: false
+
+# Los binarios de ripgrep vienen en paquetes por plataforma. Se instalan los de x64 y arm64 para
+# poder empaquetar la app de macOS para Intel y Apple Silicon desde una sola máquina.
+supportedArchitectures:
+  os:
+    - current
+  cpu:
+    - x64
+    - arm64

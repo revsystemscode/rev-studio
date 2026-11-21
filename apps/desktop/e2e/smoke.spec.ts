@@ -26,7 +26,7 @@ test('el renderer no tiene acceso a Node', async () => {
   }))
   expect(access.require).toBe('undefined')
   expect(access.process).toBe('undefined')
-  expect(access.bridge).toEqual(['encryptSecret', 'getAppInfo', 'openExternal', 'pickFolder', 'requestCorePort'])
+  expect(access.bridge).toEqual(['checkForUpdate', 'encryptSecret', 'getAppInfo', 'openExternal', 'pickFolder', 'requestCorePort'])
 })
 
 test('si el core muere, se reinicia y el renderer vuelve a conectar', async () => {

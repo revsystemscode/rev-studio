@@ -3,6 +3,7 @@ import { rgPath } from '@vscode/ripgrep'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { CoreProcess } from './core-process'
 import { encryptSecret } from './secrets'
+import { checkForUpdate } from './update-check'
 
 const here = import.meta.dirname
 const env = process.env
@@ -80,6 +81,8 @@ ipcMain.handle('open-external', async (_event, url: unknown) => {
   await shell.openExternal(url)
 })
 ipcMain.handle('app-info', () => ({ version: app.getVersion(), platform: process.platform }))
+// Las pruebas de extremo a extremo no salen a la red.
+ipcMain.handle('check-for-update', () => (e2e ? null : checkForUpdate(app.getVersion())))
 
 app.on('before-quit', () => {
   quitting = true

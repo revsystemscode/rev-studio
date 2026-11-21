@@ -1,0 +1,54 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: macos-latest
+            target: --mac
+            files: apps/desktop/release/*.dmg
+          - os: windows-latest
+            target: --win
+            files: apps/desktop/release/*.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm --filter @rev/desktop e2e
+      # macOS: .dmg para Apple Silicon e Intel (ver electron-builder.yml). Windows: instalador NSIS x64.
+      - run: pnpm --filter @rev/desktop dist ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: instaladores-${{ matrix.os }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+
+  # Un solo job publica la release, para que los dos sistemas no compitan al crearla.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: instaladores
+          merge-multiple: true
+      - run: ls -la instaladores
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: instaladores/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true

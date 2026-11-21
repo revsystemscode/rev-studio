@@ -4,6 +4,7 @@ import { FilesPanel } from '@/components/FilesPanel'
 import { FirstRun } from '@/components/FirstRun'
 import { Settings } from '@/components/Settings'
 import { Sidebar } from '@/components/Sidebar'
+import { UpdateBar } from '@/components/UpdateBar'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { connectCore } from './connect'
@@ -35,35 +36,38 @@ export function App() {
       <span hidden data-testid="core-connections">
         {connections}
       </span>
-      <ResizablePanelGroup orientation="horizontal" className="h-full">
-        <ResizablePanel id="sidebar" defaultSize="20%" minSize={180} maxSize="35%">
-          <Sidebar />
-        </ResizablePanel>
-        <ResizableHandle />
-        {!ready ? (
-          <ResizablePanel id="loading">
-            <Placeholder>Conectando…</Placeholder>
+      <div className="flex h-full flex-col">
+        <UpdateBar />
+        <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
+          <ResizablePanel id="sidebar" defaultSize="20%" minSize={180} maxSize="35%">
+            <Sidebar />
           </ResizablePanel>
-        ) : view === 'settings' ? (
-          <ResizablePanel id="settings">
-            <Settings />
-          </ResizablePanel>
-        ) : noProvider ? (
-          <ResizablePanel id="first-run">
-            <FirstRun />
-          </ResizablePanel>
-        ) : (
-          <>
-            <ResizablePanel id="chat" minSize={320}>
-              <Center />
+          <ResizableHandle />
+          {!ready ? (
+            <ResizablePanel id="loading">
+              <Placeholder>Conectando…</Placeholder>
             </ResizablePanel>
-            <ResizableHandle />
-            <ResizablePanel id="files" defaultSize="34%" minSize={240}>
-              <Right />
+          ) : view === 'settings' ? (
+            <ResizablePanel id="settings">
+              <Settings />
             </ResizablePanel>
-          </>
-        )}
-      </ResizablePanelGroup>
+          ) : noProvider ? (
+            <ResizablePanel id="first-run">
+              <FirstRun />
+            </ResizablePanel>
+          ) : (
+            <>
+              <ResizablePanel id="chat" minSize={320}>
+                <Center />
+              </ResizablePanel>
+              <ResizableHandle />
+              <ResizablePanel id="files" defaultSize="34%" minSize={240}>
+                <Right />
+              </ResizablePanel>
+            </>
+          )}
+        </ResizablePanelGroup>
+      </div>
       <Notice />
     </TooltipProvider>
   )

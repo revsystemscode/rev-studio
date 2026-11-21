@@ -12,6 +12,8 @@ const bridge = {
   encryptSecret: (plain: string): Promise<string> => ipcRenderer.invoke('encrypt-secret', plain),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('open-external', url),
   getAppInfo: (): Promise<{ version: string; platform: string }> => ipcRenderer.invoke('app-info'),
+  /** Versión publicada más nueva que la instalada, o null. */
+  checkForUpdate: (): Promise<{ version: string; url: string } | null> => ipcRenderer.invoke('check-for-update'),
 }
 
 export type RevBridge = typeof bridge
