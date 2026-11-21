@@ -25,8 +25,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm --filter @rev/desktop e2e
+      - run: node .github/scripts/annotate.mjs pnpm test
+      - run: node .github/scripts/annotate.mjs pnpm --filter @rev/desktop e2e
       # macOS: .dmg para Apple Silicon e Intel (ver electron-builder.yml). Windows: instalador NSIS x64.
       - run: pnpm --filter @rev/desktop dist ${{ matrix.target }}
       - uses: actions/upload-artifact@v4

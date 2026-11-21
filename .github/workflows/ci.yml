@@ -20,5 +20,5 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm --filter @rev/desktop e2e
+      - run: node .github/scripts/annotate.mjs pnpm test
+      - run: node .github/scripts/annotate.mjs pnpm --filter @rev/desktop e2e
