@@ -101,6 +101,15 @@ describe('runProcess', () => {
     expect(r.output).toContain('José')
   })
 
+  // PowerShell 5.1 escribe la salida de sus cmdlets en la página de códigos OEM (850 en español).
+  it.runIf(process.platform === 'win32')('en Windows la salida de PowerShell conserva los acentos', async () => {
+    const p = makeProject({}, 'Mis proyectos/José')
+    const r = await sh("Write-Output 'José año'; (Get-Location).Path", p.root)
+    expect(r.exitCode).toBe(0)
+    expect(r.output).toContain('José año')
+    expect(r.output).toContain(join('Mis proyectos', 'José'))
+  })
+
   it('un ejecutable inexistente rechaza con error', async () => {
     const p = makeProject()
     await expect(
