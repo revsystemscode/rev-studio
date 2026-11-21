@@ -308,7 +308,9 @@ describe('archivos', () => {
     mkdirSync(join(h.root, 'node_modules/dep'), { recursive: true })
     mkdirSync(join(h.root, '.git'))
     const project = await h.call('projects.add', { path: h.root })
+    // Como la interfaz con src desplegada: si el sistema pierde eventos, se avisa de lo listado.
     await h.call('fs.list', { projectId: project.id, dir: '' })
+    await h.call('fs.list', { projectId: project.id, dir: 'src' })
     await new Promise((r) => setTimeout(r, 300))
     for (let i = 0; i < 100; i++) writeFileSync(join(h.root, 'node_modules/dep', `f${i}.js`), '')
     writeFileSync(join(h.root, '.git/HEAD'), 'x')
@@ -324,11 +326,33 @@ describe('archivos', () => {
     const h = await boot()
     const project = await h.call('projects.add', { path: h.root })
     await h.call('fs.list', { projectId: project.id, dir: '' })
+    await h.call('fs.list', { projectId: project.id, dir: 'src' })
     await new Promise((r) => setTimeout(r, 300))
     for (let i = 0; i < 100; i++) writeFileSync(join(h.root, 'src', `f${i}.ts`), '')
     await h.waitFor('tree.changed', (e) => e.dir === 'src')
     await new Promise((r) => setTimeout(r, 800))
     expect(h.events.filter((e) => e.type === 'tree.changed' && e.dir === 'src').length).toBeLessThanOrEqual(3)
+  })
+})
+
+describe('vigilancia tras una ráfaga', () => {
+  it('después de una ráfaga grande (npm install) el vigilante sigue avisando de cambios', async () => {
+    const h = await boot()
+    mkdirSync(join(h.root, 'node_modules/dep'), { recursive: true })
+    const project = await h.call('projects.add', { path: h.root })
+    await h.call('fs.list', { projectId: project.id, dir: '.' })
+    await h.call('fs.list', { projectId: project.id, dir: 'src' })
+    await new Promise((r) => setTimeout(r, 300))
+    for (let i = 0; i < 500; i++) writeFileSync(join(h.root, 'node_modules/dep', `archivo-con-nombre-largo-${i}.js`), '')
+    await new Promise((r) => setTimeout(r, 1500))
+    const before = h.events.length
+    writeFileSync(join(h.root, 'src/despues.ts'), '')
+    const deadline = Date.now() + 10_000
+    while (!h.events.slice(before).some((e) => e.type === 'tree.changed' && e.dir === 'src')) {
+      if (Date.now() > deadline) throw new Error('El vigilante dejó de avisar tras la ráfaga')
+      await new Promise((r) => setTimeout(r, 20))
+    }
+    expect(h.events.slice(before).every((e) => e.type !== 'tree.changed' || !e.dir.includes('node_modules'))).toBe(true)
   })
 })
 

@@ -163,7 +163,7 @@ export async function startCore(opts: CoreOptions): Promise<{ dispose(): Promise
     'fs.list': async ({ projectId, dir }) => {
       const { path: root } = project(projectId)
       const entries = await listDirectory(root, dir)
-      watcher.watch(projectId, root)
+      watcher.watch(projectId, root, dir)
       return entries
     },
     'fs.read': ({ projectId, path: p }) => readForUi(project(projectId).path, p),
