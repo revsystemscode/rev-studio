@@ -1,0 +1,39 @@
+appId: com.revsystems.revstudio
+productName: Rev Studio
+copyright: Copyright © 2026 Rev Systems
+directories:
+  output: release
+  buildResources: build
+# Todo el código va empaquetado por electron-vite en out/. La única dependencia en tiempo de
+# ejecución es ripgrep, que llega por node_modules.
+files:
+  - out/**/*
+  - package.json
+# Un binario no se puede ejecutar desde dentro del .asar: ripgrep queda al lado, en app.asar.unpacked.
+asarUnpack:
+  - '**/node_modules/@vscode/ripgrep-*/bin/*'
+artifactName: Rev-Studio-${version}-${os}-${arch}.${ext}
+mac:
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+  category: public.app-category.developer-tools
+  icon: build/icon.png
+  # Sin certificado de desarrollador: firma ad hoc ("-"). Apple Silicon no abre apps sin ninguna firma.
+  identity: '-'
+  hardenedRuntime: false
+dmg:
+  title: Rev Studio ${version}
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.png
+nsis:
+  oneClick: true
+  perMachine: false
+  shortcutName: Rev Studio
+publish: null

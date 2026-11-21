@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b5bdb"/>
+      <stop offset="1" stop-color="#1e2a78"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- Rejilla de iconos de macOS: 824 px de contenido con margen de 100 px. -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#shine)"/>
+  <!-- Corchetes de código -->
+  <path d="M300 380 L200 512 L300 644" fill="none" stroke="#ffffff" stroke-opacity="0.55" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M724 380 L824 512 L724 644" fill="none" stroke="#ffffff" stroke-opacity="0.55" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- R -->
+  <path d="M418 684 V340 H530 C598 340 638 380 638 446 C638 498 610 534 566 546 L640 684" fill="none" stroke="#ffffff" stroke-width="58" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M418 552 H540" fill="none" stroke="#ffffff" stroke-width="58" stroke-linecap="round"/>
+</svg>
