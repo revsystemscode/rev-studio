@@ -21,7 +21,7 @@ afterEach(async () => {
 })
 
 function tempDir(prefix: string): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)))
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), prefix)))
   disposers.push(() => rmSync(dir, { recursive: true, force: true }))
   return dir
 }

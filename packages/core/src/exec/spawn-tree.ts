@@ -21,13 +21,28 @@ export interface RunOptions {
 
 export const DEFAULT_MAX_BYTES = 1_048_576
 
+/**
+ * `powershell -Command` termina con 0 o 1 según el último comando haya ido bien o no, y pierde el
+ * código real de un programa (p. ej. 2 en `npm test`). El envoltorio sale con `$LASTEXITCODE` si un
+ * programa lo fijó, o con 1 si falló un cmdlet.
+ */
+function powershellScript(command: string): string {
+  return [
+    '$global:LASTEXITCODE = $null',
+    command,
+    '$ok = $?',
+    'if ($null -ne $global:LASTEXITCODE) { exit $global:LASTEXITCODE }',
+    'if (-not $ok) { exit 1 }',
+  ].join('\n')
+}
+
 /** Cómo ejecutar una línea de comando en la shell del usuario de cada plataforma. */
 export function shellInvocation(
   command: string,
   platform: NodeJS.Platform = process.platform,
 ): { file: string; args: string[] } {
   if (platform === 'win32') {
-    return { file: 'powershell.exe', args: ['-NoProfile', '-NonInteractive', '-Command', command] }
+    return { file: 'powershell.exe', args: ['-NoProfile', '-NonInteractive', '-Command', powershellScript(command)] }
   }
   // Shell de login: hereda el PATH del usuario aunque la app se haya abierto desde Finder.
   return { file: '/bin/zsh', args: ['-lc', command] }

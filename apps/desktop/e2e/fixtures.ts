@@ -28,7 +28,7 @@ export interface Launched {
 export async function launchApp(
   opts: { script?: StepEvent[][]; prepare?(userData: string): void; expectWindow?: boolean } = {},
 ): Promise<Launched> {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), 'rev-e2e-')))
+  const base = realpathSync.native(mkdtempSync(join(tmpdir(), 'rev-e2e-')))
   const userData = join(base, 'datos')
   const projectDir = join(base, 'mi-web')
   mkdirSync(join(projectDir, 'src'), { recursive: true })

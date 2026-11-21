@@ -26,7 +26,7 @@ const created: TestProject[] = []
 
 /** `subdir` permite probar rutas con espacios y caracteres no ASCII. */
 export function makeProject(files: Record<string, string | Buffer> = {}, subdir = 'proyecto'): TestProject {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), 'rev-test-')))
+  const base = realpathSync.native(mkdtempSync(join(tmpdir(), 'rev-test-')))
   const root = join(base, subdir)
   mkdirSync(root, { recursive: true })
   const write = (rel: string, content: string | Buffer) => {

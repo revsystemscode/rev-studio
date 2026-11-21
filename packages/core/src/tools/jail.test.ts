@@ -12,7 +12,7 @@ afterEach(() => {
 })
 
 function outsideDir(): string {
-  const d = realpathSync(mkdtempSync(join(tmpdir(), 'rev-outside-')))
+  const d = realpathSync.native(mkdtempSync(join(tmpdir(), 'rev-outside-')))
   extra.push(d)
   writeFileSync(join(d, 'secreto.txt'), 'secreto')
   return d

@@ -112,9 +112,16 @@ describe('runProcess', () => {
 describe('shellInvocation', () => {
   it('usa zsh -lc en macOS y PowerShell sin perfil en Windows', () => {
     expect(shellInvocation('ls', 'darwin')).toEqual({ file: '/bin/zsh', args: ['-lc', 'ls'] })
-    expect(shellInvocation('dir', 'win32')).toEqual({
-      file: 'powershell.exe',
-      args: ['-NoProfile', '-NonInteractive', '-Command', 'dir'],
-    })
+    const win = shellInvocation('node s.js', 'win32')
+    expect(win.file).toBe('powershell.exe')
+    expect(win.args.slice(0, 3)).toEqual(['-NoProfile', '-NonInteractive', '-Command'])
+    expect(win.args[3]).toContain('node s.js')
+  })
+
+  it('en Windows el script conserva el código de salida del último programa (powershell -Command solo da 0 o 1)', () => {
+    const script = shellInvocation('node s.js', 'win32').args[3]!
+    expect(script).toContain('exit $global:LASTEXITCODE')
+    // El comando del usuario va en su propia línea, sin mezclarse con el envoltorio.
+    expect(script.split('\n')).toContain('node s.js')
   })
 })
