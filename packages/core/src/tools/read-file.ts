@@ -13,9 +13,9 @@ const schema = z.object({
   endLine: z.number().int().min(1).optional().describe('Last line to read (inclusive).'),
 })
 
-export function looksBinary(buf: Buffer): boolean {
-  return buf.subarray(0, 8192).includes(0)
-}
+import { looksBinary } from './text'
+
+export { looksBinary }
 
 export const readFile: ToolDef<z.infer<typeof schema>> = {
   name: 'read_file',

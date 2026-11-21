@@ -150,6 +150,29 @@ describe('write_file', () => {
   })
 })
 
+describe('archivos que no son UTF-8', () => {
+  // "Año: café" en Latin-1 / Windows-1252: no es binario, pero tampoco UTF-8 válido.
+  const latin1 = Buffer.from([0x41, 0xf1, 0x6f, 0x3a, 0x20, 0x63, 0x61, 0x66, 0xe9, 0x0a])
+
+  it('edit_file se niega a editarlo y no lo toca', async () => {
+    const p = makeProject({ 'viejo.txt': latin1 })
+    await expect(editFile.preview!({ path: 'viejo.txt', oldText: 'caf', newText: 'te' }, p.ctx)).rejects.toThrow(/UTF-8/)
+    await expect(editFile.run({ path: 'viejo.txt', oldText: 'caf', newText: 'te' }, p.ctx)).rejects.toThrow(/UTF-8/)
+    expect(readFileSync(join(p.root, 'viejo.txt'))).toEqual(latin1)
+    expect(p.changed).toEqual([])
+  })
+
+  it('write_file se niega a sobrescribir un archivo binario o que no es UTF-8, sin tocarlo', async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01])
+    const p = makeProject({ 'logo.png': png, 'viejo.txt': latin1 })
+    await expect(writeFile.preview!({ path: 'logo.png', content: 'x' }, p.ctx)).rejects.toThrow(/binario/)
+    await expect(writeFile.run({ path: 'logo.png', content: 'x' }, p.ctx)).rejects.toThrow(/binario/)
+    await expect(writeFile.run({ path: 'viejo.txt', content: 'x' }, p.ctx)).rejects.toThrow(/UTF-8/)
+    expect(readFileSync(join(p.root, 'logo.png'))).toEqual(png)
+    expect(readFileSync(join(p.root, 'viejo.txt'))).toEqual(latin1)
+  })
+})
+
 describe('jaula', () => {
   it.each([
     ['list_dir', () => listDir, { path: '..' }],

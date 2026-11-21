@@ -296,6 +296,9 @@ describe('archivos', () => {
     expect(await code(h.call('fs.read', at('../fuera.txt')))).toBe('outside_root')
     expect(await code(h.call('fs.read', at('grande.txt')))).toBe('too_large')
     expect(await code(h.call('fs.read', at('img.bin')))).toBe('binary')
+    // Latin-1: abrirlo como UTF-8 y guardarlo lo estropearía, así que no se abre.
+    writeFileSync(join(h.root, 'latin1.txt'), Buffer.from([0x63, 0x61, 0x66, 0xe9]))
+    expect(await code(h.call('fs.read', at('latin1.txt')))).toBe('binary')
     expect(await code(h.call('fs.read', at('nada.txt')))).toBe('not_found')
     await h.call('fs.write', { ...at('nueva/x.ts'), content: 'hola' })
     expect(readFileSync(join(h.root, 'nueva/x.ts'), 'utf8')).toBe('hola')

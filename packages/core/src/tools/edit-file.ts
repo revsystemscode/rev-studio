@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { z } from 'zod'
 import { resolveInRoot, toRel } from './jail'
+import { editableText } from './text'
 import { isErrno, ToolError, type ToolContext, type ToolDef } from './types'
 
 const schema = z.object({
@@ -12,13 +13,14 @@ type Input = z.infer<typeof schema>
 
 async function plan({ path: p, oldText, newText }: Input, ctx: ToolContext) {
   const abs = await resolveInRoot(ctx.root, p)
-  let original: string
+  let buf: Buffer
   try {
-    original = await readFile(abs, 'utf8')
+    buf = await readFile(abs)
   } catch (e) {
     if (isErrno(e, 'ENOENT')) throw new ToolError(`No existe el archivo "${p}". Usa write_file para crearlo.`)
     throw e
   }
+  const original = editableText(buf, p)
   // El modelo casi siempre envía \n; el archivo puede usar \r\n. Se compara en el formato del archivo.
   const eol = original.includes('\r\n') ? '\r\n' : '\n'
   const adapt = (s: string) => s.replaceAll('\r\n', '\n').replaceAll('\n', eol)
