@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Chat } from '@/components/Chat'
+import { FilesPanel } from '@/components/FilesPanel'
 import { FirstRun } from '@/components/FirstRun'
 import { Settings } from '@/components/Settings'
 import { Sidebar } from '@/components/Sidebar'
@@ -58,7 +59,7 @@ export function App() {
             </ResizablePanel>
             <ResizableHandle />
             <ResizablePanel id="files" defaultSize="34%" minSize={240}>
-              <Placeholder>Los archivos y cambios del proyecto aparecerán aquí.</Placeholder>
+              <Right />
             </ResizablePanel>
           </>
         )}
@@ -78,6 +79,15 @@ function Center() {
     return <Placeholder>{hasProjects ? 'Elige una sesión o crea una nueva en la barra lateral.' : 'Añade un proyecto para empezar.'}</Placeholder>
   }
   return <Chat key={session.id} session={session} />
+}
+
+/** Derecha: archivos y cambios del proyecto de la sesión activa. */
+function Right() {
+  const projectId = useApp((s) => s.activeProjectId)
+  const sessionId = useApp((s) => s.activeSessionId)
+  const available = useApp((s) => s.projects.find((p) => p.id === s.activeProjectId)?.available ?? false)
+  if (!projectId || !sessionId || !available) return <Placeholder>Los archivos y cambios del proyecto aparecerán aquí.</Placeholder>
+  return <FilesPanel key={projectId} projectId={projectId} sessionId={sessionId} />
 }
 
 function Placeholder({ children }: { children: React.ReactNode }) {

@@ -1,4 +1,4 @@
-import type { ApprovalDecision, CoreEvent, Project, ProviderStatus, Session, Settings } from '@rev/protocol'
+import type { ApprovalDecision, ChangedFile, CoreEvent, DirEntry, Project, ProviderStatus, Session, Settings } from '@rev/protocol'
 import { useStore } from 'zustand'
 import { createStore } from 'zustand/vanilla'
 import type { CoreClient } from '../client'
@@ -21,6 +21,18 @@ export interface AppState {
   notice: string | null
   /** Vistas del chat de las sesiones abiertas en esta ventana. */
   sessionViews: Record<string, SessionView>
+  /** Carpetas cargadas del árbol: proyecto → carpeta ('' es la raíz) → entradas. */
+  treeByProject: Record<string, Record<string, DirEntry[]>>
+  /** Archivo abierto en el editor. `content` es lo último leído o guardado en disco. */
+  openFile: OpenFile | null
+  /** Sube con cada recarga explícita, para que el editor descarte su contenido. */
+  fileReloads: number
+  openDiff: { sessionId: string; path: string; original: string | null; current: string | null } | null
+  /** Por qué no se pudo abrir el último archivo pedido (demasiado grande, binario…). */
+  editorError: { path: string; message: string } | null
+  changesBySession: Record<string, ChangedFile[]>
+  /** Pregunta pendiente: abrir otra cosa descartaría los cambios sin guardar de `path`. */
+  discardPrompt: { path: string } | null
 
   /** Carga proyectos, sesiones, proveedores y ajustes. Se llama de nuevo cuando el core se reinicia. */
   init(client: CoreClient): Promise<void>
@@ -40,9 +52,30 @@ export interface AppState {
   retryTurn(sessionId: string): Promise<boolean>
   resolveApproval(approvalId: string, decision: ApprovalDecision): Promise<boolean>
   setDefaultModel(choice: { providerId: string; model: string } | null): Promise<boolean>
+  loadDir(projectId: string, dir: string): Promise<void>
+  openPath(projectId: string, path: string): Promise<void>
+  setOpenFileDirty(dirty: boolean): void
+  saveOpenFile(content: string): Promise<boolean>
+  reloadOpenFile(): Promise<void>
+  closeEditor(): void
+  /** Ejecuta `proceed` si no hay cambios sin guardar; si los hay, lo deja pendiente de confirmación. */
+  guardUnsaved(proceed: () => void): void
+  answerDiscard(discard: boolean): void
+  refreshChanges(sessionId: string): Promise<void>
+  showDiff(sessionId: string, path: string): Promise<void>
+  revertFile(sessionId: string, path: string): Promise<boolean>
   setView(view: AppState['view']): void
   dismissNotice(): void
   applyEvent(e: CoreEvent): void
+}
+
+export interface OpenFile {
+  projectId: string
+  path: string
+  content: string
+  dirty: boolean
+  /** El archivo cambió en disco mientras tenía cambios sin guardar. */
+  diskChanged: boolean
 }
 
 export interface AppStoreDeps {
@@ -53,6 +86,9 @@ const NO_MODEL = 'No hay ningún modelo disponible. Revisa los proveedores en Aj
 const NOT_CONNECTED = 'Rev Studio todavía no está conectado con su motor.'
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
+/** El core llama '' a la raíz en sus eventos y '.' en sus peticiones. */
+const dirKey = (dir: string) => (dir === '.' || dir === '/' ? '' : dir)
+const parentDir = (path: string) => path.split('/').slice(0, -1).join('/')
 
 export function createAppStore(deps: AppStoreDeps) {
   return createStore<AppState>()((set, get) => {
@@ -76,6 +112,8 @@ export function createAppStore(deps: AppStoreDeps) {
      * espera al core: su respuesta se pidió antes y pisaría lo que el usuario acaba de hacer.
      */
     let changes = 0
+    /** Acción que espera a que el usuario confirme descartar cambios sin guardar. */
+    let pendingDiscard: (() => void) | null = null
     const replaceSession = (session: Session) =>
       set((s) => ({
         sessionsByProject: {
@@ -105,6 +143,26 @@ export function createAppStore(deps: AppStoreDeps) {
       if (list && get().client === client) set((s) => ({ sessionsByProject: { ...s.sessionsByProject, [projectId]: list } }))
     }
 
+    /** Vuelve a leer el archivo abierto: lo sustituye si no tiene cambios sin guardar; si los tiene, avisa. */
+    const checkOpenFile = async (projectId: string, path: string) => {
+      const client = get().client
+      const open = get().openFile
+      if (!client || !open || open.projectId !== projectId || open.path !== path) return
+      let content: string | null
+      try {
+        content = (await client.call('fs.read', { projectId, path })).content
+      } catch {
+        content = null
+      }
+      const now = get().openFile
+      if (!now || now.projectId !== projectId || now.path !== path || content === now.content) return
+      if (now.dirty) set({ openFile: { ...now, diskChanged: true } })
+      else if (content === null) set({ openFile: null, editorError: { path, message: 'El archivo ya no está en el disco.' } })
+      else set({ openFile: { ...now, content, diskChanged: false } })
+    }
+    const projectOfSession = (sessionId: string) =>
+      Object.entries(get().sessionsByProject).find(([, list]) => list.some((x) => x.id === sessionId))?.[0] ?? null
+
     const upsertProject = (project: Project) => {
       changes++
       set((s) => ({
@@ -129,6 +187,13 @@ export function createAppStore(deps: AppStoreDeps) {
       pendingApprovals: {},
       notice: null,
       sessionViews: {},
+      treeByProject: {},
+      openFile: null,
+      fileReloads: 0,
+      openDiff: null,
+      editorError: null,
+      changesBySession: {},
+      discardPrompt: null,
 
       async init(client) {
         set({ client })
@@ -192,7 +257,10 @@ export function createAppStore(deps: AppStoreDeps) {
           set((s) => {
             const { [id]: removed, ...sessionsByProject } = s.sessionsByProject
             const wasActive = s.activeProjectId === id
+            const { [id]: goneTree, ...treeByProject } = s.treeByProject
             return {
+              treeByProject,
+              openFile: s.openFile?.projectId === id ? null : s.openFile,
               projects: s.projects.filter((p) => p.id !== id),
               sessionsByProject,
               activeProjectId: wasActive ? null : s.activeProjectId,
@@ -248,8 +316,11 @@ export function createAppStore(deps: AppStoreDeps) {
           set((s) => {
             const { [id]: gone, ...pendingApprovals } = s.pendingApprovals
             const { [id]: goneView, ...sessionViews } = s.sessionViews
+            const { [id]: goneChanges, ...changesBySession } = s.changesBySession
             return {
               sessionViews,
+              changesBySession,
+              openDiff: s.openDiff?.sessionId === id ? null : s.openDiff,
               sessionsByProject: Object.fromEntries(
                 Object.entries(s.sessionsByProject).map(([pid, list]) => [pid, list.filter((x) => x.id !== id)]),
               ),
@@ -261,9 +332,103 @@ export function createAppStore(deps: AppStoreDeps) {
 
       async selectSession(projectId, sessionId) {
         set({ activeProjectId: projectId, activeSessionId: sessionId, view: 'main' })
+        void get().refreshChanges(sessionId)
         if (get().sessionViews[sessionId]) return
         await attempt(() => loadView(core(), sessionId))
       },
+
+      async loadDir(projectId, dir) {
+        const key = dirKey(dir)
+        try {
+          const entries = await core().call('fs.list', { projectId, dir: key || '.' })
+          set((s) => ({ treeByProject: { ...s.treeByProject, [projectId]: { ...s.treeByProject[projectId], [key]: entries } } }))
+        } catch (e) {
+          // Una carpeta que ya no existe sale del árbol; si nunca se cargó, se avisa.
+          const tree = get().treeByProject[projectId]
+          if (tree && key in tree) {
+            const { [key]: gone, ...rest } = tree
+            set((s) => ({ treeByProject: { ...s.treeByProject, [projectId]: rest } }))
+          } else {
+            set({ notice: message(e) })
+          }
+        }
+      },
+
+      async openPath(projectId, path) {
+        try {
+          const { content } = await core().call('fs.read', { projectId, path })
+          set({ openFile: { projectId, path, content, dirty: false, diskChanged: false }, openDiff: null, editorError: null })
+        } catch (e) {
+          // Demasiado grande, binario o desaparecido: se explica en el panel del editor, no como aviso global.
+          set({ openFile: null, openDiff: null, editorError: { path, message: message(e) } })
+        }
+      },
+
+      setOpenFileDirty(dirty) {
+        const open = get().openFile
+        if (open && open.dirty !== dirty) set({ openFile: { ...open, dirty } })
+      },
+
+      saveOpenFile: (content) =>
+        attempt(async () => {
+          const open = get().openFile
+          if (!open) return
+          await core().call('fs.write', { projectId: open.projectId, path: open.path, content })
+          const now = get().openFile
+          if (now?.projectId === open.projectId && now.path === open.path) set({ openFile: { ...now, content, dirty: false, diskChanged: false } })
+        }),
+
+      async reloadOpenFile() {
+        const open = get().openFile
+        if (!open) return
+        await get().openPath(open.projectId, open.path)
+        set((s) => ({ fileReloads: s.fileReloads + 1 }))
+      },
+
+      closeEditor: () => set({ openFile: null, openDiff: null, editorError: null }),
+
+      guardUnsaved(proceed) {
+        const open = get().openFile
+        if (!open?.dirty) {
+          proceed()
+          return
+        }
+        pendingDiscard = proceed
+        set({ discardPrompt: { path: open.path } })
+      },
+      answerDiscard(discard) {
+        const proceed = pendingDiscard
+        pendingDiscard = null
+        set({ discardPrompt: null })
+        if (discard) proceed?.()
+      },
+
+      async refreshChanges(sessionId) {
+        const client = get().client
+        if (!client) return
+        try {
+          const list = await client.call('changes.list', { sessionId })
+          if (get().client === client) set((s) => ({ changesBySession: { ...s.changesBySession, [sessionId]: list } }))
+        } catch {
+          // Sesión borrada o core reiniciándose: la lista se vuelve a pedir en la próxima ocasión.
+        }
+      },
+
+      async showDiff(sessionId, path) {
+        try {
+          const { original, current } = await core().call('changes.diff', { sessionId, path })
+          set({ openDiff: { sessionId, path, original, current }, openFile: null, editorError: null })
+        } catch (e) {
+          set({ openDiff: null, openFile: null, editorError: { path, message: message(e) } })
+        }
+      },
+
+      revertFile: (sessionId, path) =>
+        attempt(async () => {
+          await core().call('changes.revert', { sessionId, path })
+          if (get().openDiff?.sessionId === sessionId && get().openDiff?.path === path) set({ openDiff: null })
+          await get().refreshChanges(sessionId)
+        }),
 
       setSessionModel: (sessionId, choice) =>
         attempt(async () => {
@@ -299,6 +464,19 @@ export function createAppStore(deps: AppStoreDeps) {
       dismissNotice: () => set({ notice: null }),
 
       applyEvent(e) {
+        if (e.type === 'tree.changed') {
+          const key = dirKey(e.dir)
+          if (get().treeByProject[e.projectId]?.[key]) void get().loadDir(e.projectId, key)
+          const open = get().openFile
+          if (open?.projectId === e.projectId && parentDir(open.path) === key) void checkOpenFile(open.projectId, open.path)
+        }
+        if (e.type === 'file.changed') {
+          if (e.sessionId === get().activeSessionId) void get().refreshChanges(e.sessionId)
+          const open = get().openFile
+          if (open?.path === e.path && open.projectId === projectOfSession(e.sessionId)) void checkOpenFile(open.projectId, open.path)
+          const diff = get().openDiff
+          if (diff?.sessionId === e.sessionId && diff.path === e.path) void get().showDiff(diff.sessionId, diff.path)
+        }
         if ('sessionId' in e) {
           const view = get().sessionViews[e.sessionId]
           if (view) {

@@ -5,7 +5,9 @@ import { launchApp, type Launched } from './fixtures'
 
 let launched: Launched | undefined
 test.afterEach(async () => {
+  const errors = launched?.pageErrors ?? []
   await launched?.cleanup()
+  expect(errors, 'errores sin capturar en el renderer').toEqual([])
   launched = undefined
 })
 

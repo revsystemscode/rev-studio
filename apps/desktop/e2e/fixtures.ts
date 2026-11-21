@@ -20,6 +20,8 @@ export interface Launched {
   /** Proyecto de ejemplo con `src/auth.ts`. */
   projectDir: string
   userData: string
+  /** Errores sin capturar del renderer; las pruebas comprueban que quede vacío. */
+  pageErrors: string[]
   cleanup(): Promise<void>
 }
 
@@ -52,10 +54,12 @@ export async function launchApp(
     await app.close().catch(() => {})
     rmSync(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
   }
-  if (opts.expectWindow === false) return { app, page: undefined as never, projectDir, userData, cleanup }
+  const pageErrors: string[] = []
+  if (opts.expectWindow === false) return { app, page: undefined as never, projectDir, userData, pageErrors, cleanup }
   try {
     const page = await app.firstWindow()
-    return { app, page, projectDir, userData, cleanup }
+    page.on('pageerror', (e) => pageErrors.push(e.message))
+    return { app, page, projectDir, userData, pageErrors, cleanup }
   } catch (e) {
     await cleanup()
     throw e
