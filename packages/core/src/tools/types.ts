@@ -11,6 +11,8 @@ export interface ToolContext {
   snapshots: SnapshotStore
   /** Ruta relativa a la raíz, con `/`. */
   onFileChanged(relPath: string): void
+  /** Máximo de caracteres que devuelve read_file; depende de la ventana de contexto del modelo. */
+  readMaxChars?: number
 }
 
 export interface ToolDef<I = any> {

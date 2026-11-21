@@ -43,11 +43,12 @@ export const readFile: ToolDef<z.infer<typeof schema>> = {
     const first = Math.min(startLine ?? 1, Math.max(total, 1))
     let last = Math.min(endLine ?? total, total, first + READ_MAX_LINES - 1)
 
+    const maxChars = ctx.readMaxChars ?? READ_MAX_CHARS
     const out: string[] = []
     let chars = 0
     for (let n = first; n <= last; n++) {
       const line = `${String(n).padStart(6)}\t${lines[n - 1]}`
-      if (chars + line.length > READ_MAX_CHARS && out.length > 0) {
+      if (chars + line.length > maxChars && out.length > 0) {
         last = n - 1
         break
       }

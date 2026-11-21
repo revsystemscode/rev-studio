@@ -6,6 +6,7 @@ import { DEFAULT_SESSION_TITLE, type sessionsRepo } from '../db/repos/sessions'
 import type { PermissionService } from '../permissions/service'
 import type { ModelClient } from '../providers/types'
 import type { SnapshotStore } from '../snapshots/store'
+import { READ_MAX_CHARS } from '../tools/read-file'
 import { allTools, getTool, toolSpecs } from '../tools/registry'
 import { truncateOutput } from '../tools/truncate'
 import { ToolError, type ToolContext } from '../tools/types'
@@ -18,6 +19,18 @@ const TITLE_MAX = 60
 const LIMIT_MESSAGE = `Se alcanzó el límite de ${MAX_STEPS} pasos. Escribe para continuar.`
 const MALFORMED_MESSAGE = 'El modelo no consigue llamar a las herramientas correctamente. Prueba con otro modelo.'
 const DENIED_OUTPUT = 'El usuario rechazó esta acción.'
+/** Estimación habitual: unos 4 caracteres por token. */
+const CHARS_PER_TOKEN = 4
+/** Parte de la ventana que puede ocupar una sola lectura de archivo. */
+const READ_SHARE_OF_WINDOW = 0.25
+const contextFull = (estimated: number, window: number) =>
+  `La conversación ya no cabe en la ventana de contexto del modelo (unos ${estimated.toLocaleString('es-ES')} de ${window.toLocaleString('es-ES')} tokens) y no se puede resumir más dentro de este turno. Empieza una sesión nueva o pide algo más acotado.`
+
+/** Lo que cabe en una lectura sin llenar la ventana del modelo. */
+export function readBudget(contextWindow: number | null): number {
+  if (contextWindow === null) return READ_MAX_CHARS
+  return Math.max(4_000, Math.min(READ_MAX_CHARS, Math.floor(contextWindow * CHARS_PER_TOKEN * READ_SHARE_OF_WINDOW)))
+}
 
 export interface RunnerDeps {
   sessionId: string
@@ -128,6 +141,12 @@ export class SessionRunner {
       if (signal.aborted) return interrupted
 
       const request = buildModelMessages(this.deps.messages.list(sessionId), root)
+      // Si no cabe, Ollama recortaría el principio en silencio (instrucciones y petición incluidas).
+      const window = this.deps.contextWindow
+      if (window !== null) {
+        const estimated = Math.ceil((JSON.stringify(request).length + JSON.stringify(toolSpecs()).length) / CHARS_PER_TOKEN)
+        if (estimated > window) return { status: 'failed', error: contextFull(estimated, window) }
+      }
       let text = ''
       const calls: ToolCall[] = []
       let inputTokens: number | null = null
@@ -213,6 +232,7 @@ export class SessionRunner {
       rgPath: this.deps.rgPath,
       snapshots: this.deps.snapshots,
       onFileChanged: (path) => this.deps.emit({ type: 'file.changed', sessionId: this.deps.sessionId, path }),
+      readMaxChars: readBudget(this.deps.contextWindow),
     }
 
     try {

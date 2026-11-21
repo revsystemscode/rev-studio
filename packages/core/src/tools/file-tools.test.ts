@@ -44,6 +44,13 @@ describe('read_file', () => {
     expect(out).toMatch(/\[líneas 1-\d+ de 300\]$/)
   })
 
+  it('respeta el límite de caracteres del contexto (readMaxChars) e indica hasta dónde llegó', async () => {
+    const p = makeProject({ 'a.txt': numbered(1000) })
+    const out = await readFile.run({ path: 'a.txt' }, { ...p.ctx, readMaxChars: 2000 })
+    expect(out.length).toBeLessThan(2200)
+    expect(out).toMatch(/\[líneas 1-\d+ de 1000\]$/)
+  })
+
   it('rechaza un archivo binario', async () => {
     const p = makeProject({ 'img.bin': Buffer.from([1, 2, 0, 3]) })
     await expect(readFile.run({ path: 'img.bin' }, p.ctx)).rejects.toBeInstanceOf(ToolError)

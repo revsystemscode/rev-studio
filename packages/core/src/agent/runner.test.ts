@@ -207,6 +207,26 @@ describe('SessionRunner', () => {
     expect((readResult!.parts[0] as { output: string }).output).toContain('linea 500')
   })
 
+  it('read_file lee como mucho una cuarta parte de la ventana de contexto', async () => {
+    const big = Array.from({ length: 3000 }, (_, i) => `linea ${i + 1} ${'x'.repeat(30)}`).join('\n')
+    const h = harness([call('read_file', { path: 'big.txt' }), say('fin')], { 'big.txt': big }, { contextWindow: 8_000 })
+    await h.runner.send('lee')
+    const result = h.model.requests.at(-1)!.at(-1)!
+    const output = (result.parts[0] as { output: string }).output
+    // 8 000 tokens ≈ 32 000 caracteres de ventana; una cuarta parte, unos 8 000.
+    expect(output.length).toBeLessThan(8_500)
+    expect(output).toMatch(/\[líneas 1-\d+ de 3000\]$/)
+  })
+
+  it('si la conversación no cabe en la ventana, el turno falla con un mensaje claro en vez de llamar al modelo', async () => {
+    const h = harness([say('no debería llegar')], {}, { contextWindow: 1_000 })
+    await h.runner.send('x'.repeat(10_000))
+    expect(h.model.requests).toHaveLength(0)
+    expect(h.statuses().at(-1)).toBe('failed')
+    const status = h.events.filter((e) => e.type === 'turn.status').at(-1) as { error: string }
+    expect(status.error).toMatch(/ventana de contexto/)
+  })
+
   it('un proveedor caído deja el turno en failed y retry lo completa', async () => {
     let calls = 0
     const flaky: ModelClient = {
