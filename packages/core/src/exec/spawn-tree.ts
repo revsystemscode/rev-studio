@@ -28,6 +28,9 @@ export const DEFAULT_MAX_BYTES = 1_048_576
  */
 function powershellScript(command: string): string {
   return [
+    // PowerShell 5.1 escribe en la página de códigos OEM (850 en español): los acentos llegarían como "�".
+    '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)',
+    '$OutputEncoding = [Console]::OutputEncoding',
     '$global:LASTEXITCODE = $null',
     command,
     '$ok = $?',

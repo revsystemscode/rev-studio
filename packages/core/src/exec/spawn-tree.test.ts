@@ -130,6 +130,8 @@ describe('shellInvocation', () => {
   it('en Windows el script conserva el código de salida del último programa (powershell -Command solo da 0 o 1)', () => {
     const script = shellInvocation('node s.js', 'win32').args[3]!
     expect(script).toContain('exit $global:LASTEXITCODE')
+    // Salida en UTF-8, como la decodifica runProcess.
+    expect(script.split('\n')[0]).toBe('[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)')
     // El comando del usuario va en su propia línea, sin mezclarse con el envoltorio.
     expect(script.split('\n')).toContain('node s.js')
   })
